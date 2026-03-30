@@ -459,45 +459,41 @@ end
 -- CALIBRATION OVERLAY
 -- ══════════════════════════════════════════════════════════════
 
-local function screen_to_video(sx, sy)
-    -- Convert screen coords (OSD) to video pixel coords
+-- Convert mouse position to video pixel coordinates.
+-- mp.get_mouse_pos() returns OSD-scaled coordinates.
+-- We need to account for letterboxing/pillarboxing.
+local function mouse_to_video()
+    local mx, my = mp.get_mouse_pos()
     local osd_w, osd_h = mp.get_osd_size()
-    local vw = mp.get_property_number("width", 1280)
-    local vh = mp.get_property_number("height", 720)
+    local vw = mp.get_property_number("dwidth", mp.get_property_number("width", 1280))
+    local vh = mp.get_property_number("dheight", mp.get_property_number("height", 720))
+    local vid_w = mp.get_property_number("width", 1280)
+    local vid_h = mp.get_property_number("height", 720)
     if not osd_w or osd_w == 0 then return 0, 0 end
 
-    local aspect = vw / vh
+    -- Video display area within OSD (accounting for letterbox/pillarbox)
+    local display_aspect = vw / vh
     local osd_aspect = osd_w / osd_h
-    local vx, vy, sw, sh
-    if aspect > osd_aspect then
-        sw = osd_w; sh = osd_w / aspect
-        vx = 0; vy = (osd_h - sh) / 2
+    local render_w, render_h, offset_x, offset_y
+    if display_aspect > osd_aspect then
+        -- Video wider than window: pillarbox (black bars top/bottom... actually letterbox)
+        render_w = osd_w
+        render_h = osd_w / display_aspect
+        offset_x = 0
+        offset_y = (osd_h - render_h) / 2
     else
-        sh = osd_h; sw = osd_h * aspect
-        vx = (osd_w - sw) / 2; vy = 0
+        -- Window wider than video: pillarbox (black bars left/right)
+        render_h = osd_h
+        render_w = osd_h * display_aspect
+        offset_x = (osd_w - render_w) / 2
+        offset_y = 0
     end
-    local px = (sx - vx) / sw * vw
-    local py = (sy - vy) / sh * vh
-    return math.floor(math.max(0, math.min(vw - 1, px))), math.floor(math.max(0, math.min(vh - 1, py)))
-end
 
-local function video_to_screen(vx, vy)
-    local osd_w, osd_h = mp.get_osd_size()
-    local vw = mp.get_property_number("width", 1280)
-    local vh = mp.get_property_number("height", 720)
-    if not osd_w or osd_w == 0 then return 0, 0 end
-
-    local aspect = vw / vh
-    local osd_aspect = osd_w / osd_h
-    local ox, oy, sw, sh
-    if aspect > osd_aspect then
-        sw = osd_w; sh = osd_w / aspect
-        ox = 0; oy = (osd_h - sh) / 2
-    else
-        sh = osd_h; sw = osd_h * aspect
-        ox = (osd_w - sw) / 2; oy = 0
-    end
-    return ox + vx / vw * sw, oy + vy / vh * sh
+    -- Map mouse pos to video pixel coords
+    local vx = (mx - offset_x) / render_w * vid_w
+    local vy = (my - offset_y) / render_h * vid_h
+    return math.floor(math.max(0, math.min(vid_w - 1, vx))),
+           math.floor(math.max(0, math.min(vid_h - 1, vy)))
 end
 
 render_calibration = function()
@@ -672,7 +668,7 @@ enter_calibration = function()
                 if my < 36 then return end
 
                 if cal_mode == "pick-color" then
-                    local vx, vy = screen_to_video(mx, my)
+                    local vx, vy = mouse_to_video()
                     if cal_last_screenshot then
                         local r, g, b = get_pixel(cal_last_screenshot.data, cal_last_screenshot.stride, vx, vy)
                         local cfg = config[cal_channel] or {}
@@ -688,7 +684,7 @@ enter_calibration = function()
                 end
 
                 if cal_mode == "pick-center" then
-                    local vx, vy = screen_to_video(mx, my)
+                    local vx, vy = mouse_to_video()
                     local cfg = config[cal_channel]
                     if cfg then cfg.center_x = vx end
                     mp.osd_message(string.format("Center set at x=%d", vx))
@@ -698,7 +694,7 @@ enter_calibration = function()
                 end
 
                 -- Two-click rectangle: first click = corner 1, second click = corner 2
-                local vx, vy = screen_to_video(mx, my)
+                local vx, vy = mouse_to_video()
 
                 if not cal_drawing then
                     -- First click: set corner 1, start tracking
@@ -828,8 +824,7 @@ local function on_tick()
     if cal_active then
         -- Poll mouse position for rectangle drawing
         if cal_drawing then
-            local mx, my = mp.get_mouse_pos()
-            local vx, vy = screen_to_video(mx, my)
+            local vx, vy = mouse_to_video()
             cal_draw_cur = { x = vx, y = vy }
         end
         -- In calibration, still sample for live preview
