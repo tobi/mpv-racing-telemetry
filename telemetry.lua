@@ -459,23 +459,17 @@ end
 -- CALIBRATION OVERLAY
 -- ══════════════════════════════════════════════════════════════
 
--- Convert mouse position to video pixel coordinates.
--- Uses mpv's video-out-params to get the actual rendered video area.
-local function mouse_to_video()
-    local mx, my = mp.get_mouse_pos()
+-- Compute the video rendering area within the OSD coordinate system.
+-- Returns offset_x, offset_y, scale_x, scale_y so that:
+--   osd_x = offset_x + video_x * scale_x
+--   osd_y = offset_y + video_y * scale_y
+local function get_video_transform()
     local osd_w, osd_h = mp.get_osd_size()
     local vid_w = mp.get_property_number("video-params/w", 1280)
     local vid_h = mp.get_property_number("video-params/h", 720)
-    if not osd_w or osd_w == 0 then return 0, 0 end
+    if not osd_w or osd_w == 0 then return 0, 0, 1, 1, vid_w, vid_h end
 
-    -- On macOS Retina, OSD coords may be in logical points.
-    -- mp.get_mouse_pos() and mp.get_osd_size() use the same coordinate system,
-    -- so we just need to find where the video is rendered within the OSD area.
-
-    -- Get display aspect ratio from mpv (accounts for pixel aspect ratio)
     local dar = mp.get_property_number("video-params/aspect", vid_w / vid_h)
-
-    -- Calculate video rendering area within OSD
     local osd_aspect = osd_w / osd_h
     local render_w, render_h, offset_x, offset_y
     if dar > osd_aspect then
@@ -490,17 +484,22 @@ local function mouse_to_video()
         offset_y = 0
     end
 
-    local vx = (mx - offset_x) / render_w * vid_w
-    local vy = (my - offset_y) / render_h * vid_h
+    return offset_x, offset_y, render_w / vid_w, render_h / vid_h, vid_w, vid_h
+end
 
-    -- Debug: show mapping info
-    if cal_active then
-        msg.verbose(string.format(
-            "mouse(%d,%d) osd(%dx%d) vid(%dx%d) dar=%.3f render(%d,%d %dx%d) -> video(%d,%d)",
-            mx, my, osd_w, osd_h, vid_w, vid_h, dar,
-            offset_x, offset_y, render_w, render_h,
-            math.floor(vx), math.floor(vy)))
-    end
+-- Convert video pixel coords to OSD coords
+local function video_to_osd(vx, vy)
+    local ox, oy, sx, sy = get_video_transform()
+    return ox + vx * sx, oy + vy * sy
+end
+
+-- Convert mouse position (OSD coords) to video pixel coords
+local function mouse_to_video()
+    local mx, my = mp.get_mouse_pos()
+    local ox, oy, sx, sy, vid_w, vid_h = get_video_transform()
+
+    local vx = (mx - ox) / sx
+    local vy = (my - oy) / sy
 
     return math.floor(math.max(0, math.min(vid_w - 1, vx))),
            math.floor(math.max(0, math.min(vid_h - 1, vy)))
@@ -511,14 +510,9 @@ render_calibration = function()
         cal_overlay.data = ""; cal_overlay:update(); return
     end
 
-    -- Use video resolution as the coordinate system so rectangles
-    -- align with actual video pixels regardless of window size
-    local vw = mp.get_property_number("width", 1280)
-    local vh = mp.get_property_number("height", 720)
-    cal_overlay.res_x = vw
-    cal_overlay.res_y = vh
-
-    local osd_w, osd_h = vw, vh  -- draw in video coords now
+    -- Draw in OSD coordinates, transform video pixel coords via video_to_osd()
+    local osd_w, osd_h = mp.get_osd_size()
+    if not osd_w or osd_w == 0 then return end
 
     local ass = assdraw.ass_new()
 
@@ -572,12 +566,12 @@ render_calibration = function()
     ass:new_event(); ass:pos(osd_w - 10, 18)
     ass:append(string.format("{\\an6\\bord0\\shad0%s\\fs11}[%s]", ass_color(100,100,100), config_name))
 
-    -- Draw existing regions (directly in video pixel coords)
+    -- Draw existing regions (video coords → OSD coords via video_to_osd)
     for _, ch in ipairs(CHANNELS) do
         local cfg = config[ch]
         if cfg and cfg.x then
-            local x1, y1 = cfg.x, cfg.y
-            local x2, y2 = cfg.x + cfg.w, cfg.y + cfg.h
+            local sx1, sy1 = video_to_osd(cfg.x, cfg.y)
+            local sx2, sy2 = video_to_osd(cfg.x + cfg.w, cfg.y + cfg.h)
             local is_sel = cal_channel == ch
             local cr, cg, cb = 34, 204, 68
             if is_sel then cr, cg, cb = 225, 6, 0 end
@@ -586,10 +580,10 @@ render_calibration = function()
             ass:new_event(); ass:pos(0, 0)
             ass:append(string.format("{\\bord%.1f\\shad0%s\\1a&HFF&\\p1}", is_sel and 2.5 or 1.5,
                 ass_bord_color(cr, cg, cb)))
-            ass:draw_start(); ass:rect_cw(x1, y1, x2, y2); ass:draw_stop()
+            ass:draw_start(); ass:rect_cw(sx1, sy1, sx2, sy2); ass:draw_stop()
 
             -- Label
-            ass:new_event(); ass:pos(x1 + 3, y1 - 3)
+            ass:new_event(); ass:pos(sx1 + 3, sy1 - 12)
             ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs10\\b1}%s",
                 ass_color(cr, cg, cb), ch:upper()))
 
@@ -601,7 +595,7 @@ render_calibration = function()
                 elseif cfg.type == "center-offset" then val_str = string.format("%.0f%%", (cur[ch] or 0) * 100)
                 end
                 if val_str then
-                    ass:new_event(); ass:pos(x2 + 6, (y1 + y2) / 2)
+                    ass:new_event(); ass:pos(sx2 + 8, (sy1 + sy2) / 2)
                     ass:append(string.format("{\\an4\\bord0\\shad1\\4c&H000000&%s\\fs14\\b1}→ %s",
                         ass_color(255, 220, 0), val_str))
                 end
@@ -609,41 +603,75 @@ render_calibration = function()
 
             -- Center marker
             if cfg.type == "center-offset" and cfg.center_x then
+                local cx_s, _ = video_to_osd(cfg.center_x, 0)
                 ass:new_event(); ass:pos(0, 0)
                 ass:append(string.format("{\\bord0\\shad0%s\\p1}", ass_color(255, 100, 255)))
                 ass:draw_start()
-                ass:rect_cw(cfg.center_x - 1, y1, cfg.center_x + 1, y2)
+                ass:rect_cw(cx_s - 1, sy1, cx_s + 1, sy2)
                 ass:draw_stop()
             end
         end
     end
 
-    -- Current draw rectangle (already in video pixel coords)
+    -- Current draw rectangle (video coords → OSD)
     if cal_drawing and cal_draw_start and cal_draw_cur then
-        local x1 = math.min(cal_draw_start.x, cal_draw_cur.x)
-        local y1 = math.min(cal_draw_start.y, cal_draw_cur.y)
-        local x2 = math.max(cal_draw_start.x, cal_draw_cur.x)
-        local y2 = math.max(cal_draw_start.y, cal_draw_cur.y)
+        local sx1, sy1 = video_to_osd(
+            math.min(cal_draw_start.x, cal_draw_cur.x),
+            math.min(cal_draw_start.y, cal_draw_cur.y))
+        local sx2, sy2 = video_to_osd(
+            math.max(cal_draw_start.x, cal_draw_cur.x),
+            math.max(cal_draw_start.y, cal_draw_cur.y))
         ass:new_event(); ass:pos(0, 0)
         ass:append(string.format("{\\bord2\\shad0%s\\1a&HFF&\\p1}", ass_bord_color(225, 6, 0)))
-        ass:draw_start(); ass:rect_cw(x1, y1, x2, y2); ass:draw_stop()
+        ass:draw_start(); ass:rect_cw(sx1, sy1, sx2, sy2); ass:draw_stop()
 
-        -- Pixel dimensions
-        ass:new_event(); ass:pos(x1 + 4, y1 - 5)
+        -- Pixel dimensions (in video pixels)
+        local pw = math.abs(cal_draw_cur.x - cal_draw_start.x)
+        local ph = math.abs(cal_draw_cur.y - cal_draw_start.y)
+        ass:new_event(); ass:pos(sx1 + 4, sy1 - 14)
         ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs11\\b1\\fnmonospace}%dx%d",
-            ass_color(225, 6, 0), x2 - x1, y2 - y1))
+            ass_color(225, 6, 0), pw, ph))
     end
 
-    -- Debug: show cursor video coords and pixel color under cursor
+    -- ── Yellow cursor dot + debug info ──
+    local mx, my = mp.get_mouse_pos()
     local dbg_vx, dbg_vy = mouse_to_video()
-    local dbg_info = string.format("cursor: %d,%d", dbg_vx, dbg_vy)
+
+    -- Yellow dot at mouse position
+    local dot_r = 4
+    ass:new_event(); ass:pos(0, 0)
+    ass:append(string.format("{\\bord1\\shad0\\3c&H000000&%s\\p1}", ass_color(255, 255, 0)))
+    ass:draw_start()
+    local k = 0.5522847498 * dot_r
+    ass:move_to(mx, my - dot_r)
+    ass:bezier_curve(mx+k, my-dot_r, mx+dot_r, my-k, mx+dot_r, my)
+    ass:bezier_curve(mx+dot_r, my+k, mx+k, my+dot_r, mx, my+dot_r)
+    ass:bezier_curve(mx-k, my+dot_r, mx-dot_r, my+k, mx-dot_r, my)
+    ass:bezier_curve(mx-dot_r, my-k, mx-k, my-dot_r, mx, my-dot_r)
+    ass:draw_stop()
+
+    -- Crosshair lines through cursor
+    ass:new_event(); ass:pos(0, 0)
+    ass:append(string.format("{\\bord0\\shad0%s%s\\p1}", ass_color(255,255,0), ass_alpha(0.4)))
+    ass:draw_start()
+    ass:rect_cw(mx - 20, my, mx + 20, my + 1)
+    ass:rect_cw(mx, my - 20, mx + 1, my + 20)
+    ass:draw_stop()
+
+    -- Debug text: video coords + pixel color, positioned next to cursor
+    local dbg_info = string.format("(%d, %d)", dbg_vx, dbg_vy)
     if cal_last_screenshot then
         local pr, pg, pb = get_pixel(cal_last_screenshot.data, cal_last_screenshot.stride, dbg_vx, dbg_vy)
         dbg_info = dbg_info .. string.format("  rgb(%d,%d,%d)", pr, pg, pb)
     end
-    ass:new_event(); ass:pos(vw - 10, vh - 10)
-    ass:append(string.format("{\\an6\\bord0\\shad1\\4c&H000000&%s\\fs10\\fnmonospace}%s",
+    ass:new_event(); ass:pos(mx + 12, my - 8)
+    ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs11\\fnmonospace\\b1}%s",
         ass_color(255, 255, 0), dbg_info))
+
+    -- Also show in top-right corner for visibility
+    ass:new_event(); ass:pos(osd_w - 10, 18)
+    ass:append(string.format("{\\an6\\bord0\\shad0%s\\fs11\\fnmonospace}video: %d,%d  [%s]",
+        ass_color(100,100,100), dbg_vx, dbg_vy, config_name))
 
     cal_overlay.data = ass.text; cal_overlay:update()
 end
