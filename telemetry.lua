@@ -202,14 +202,14 @@ local dragging = false
 local drag_offset = { x = 0, y = 0 }
 
 -- Trace history
-local TRACE_LEN = 200
+local TRACE_LEN = 90
 local trace = {}
 local trace_idx = 0
 
 -- Current values
 local cur = { throttle = 0, brake = 0, gear = 0, steering = 0, speed = 0, fuel = 0 }
 local raw_vals = { throttle = 0, brake = 0, gear = 0, steering = 0, speed = 0, fuel = 0 }
-local SMOOTH = 0.3
+local SMOOTH = 0.15
 
 -- Forward declarations
 local enter_calibration, exit_calibration, render_calibration, render_overlay
@@ -372,7 +372,7 @@ render_overlay = function()
                     local x1 = trace_x + (TRACE_LEN - n + i) * step
                     local y0 = trace_y + trace_h * (1 - get_val(e0))
                     local y1 = trace_y + trace_h * (1 - get_val(e1))
-                    local th = 2 * scale
+                    local th = 4 * scale
                     ass:new_event(); ass:pos(0, 0)
                     ass:append(string.format("{\\bord0\\shad0%s%s\\p1}", ass_color(r, g, b), ass_alpha(alpha or 0.85)))
                     ass:draw_start()
@@ -890,7 +890,7 @@ end
 
 local function start_sampling()
     if timer then timer:kill() end
-    timer = mp.add_periodic_timer(0.1, on_tick)
+    timer = mp.add_periodic_timer(1/30, on_tick)  -- 30 Hz
 end
 
 local function stop_sampling()
