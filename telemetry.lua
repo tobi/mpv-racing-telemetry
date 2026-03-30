@@ -202,7 +202,7 @@ local dragging = false
 local drag_offset = { x = 0, y = 0 }
 
 -- Trace history
-local TRACE_LEN = 90
+local TRACE_LEN = 150
 local trace = {}
 local trace_idx = 0
 
