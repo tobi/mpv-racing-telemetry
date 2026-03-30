@@ -372,15 +372,27 @@ render_overlay = function()
                 string.format("\\3a&H%02X&", math.floor((1 - (alpha or 0.85)) * 255))))
             ass:draw_start()
             local started = false
+            local first_x, last_x = 0, 0
+            local baseline = trace_y + trace_h + th  -- just below visible area
             for i = 0, n - 1 do
                 local e = trace[si + i]
                 if e then
                     local px = trace_x + (TRACE_LEN - n + i) * step
                     local py = trace_y + trace_h * (1 - get_val(e))
-                    if not started then ass:move_to(px, py); started = true
-                    else ass:line_to(px, py) end
+                    if not started then
+                        first_x = px
+                        -- Start from below so the auto-close line is hidden
+                        ass:move_to(px, baseline)
+                        ass:line_to(px, py)
+                        started = true
+                    else
+                        ass:line_to(px, py)
+                    end
+                    last_x = px
                 end
             end
+            -- End below so the closing segment is invisible
+            ass:line_to(last_x, baseline)
             ass:draw_stop()
         end
         if has_gear then draw_trace(function(e) return (e.gear or 0) / 7 end, 255, 255, 255, 0.15) end
