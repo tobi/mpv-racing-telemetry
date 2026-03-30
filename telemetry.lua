@@ -37,18 +37,18 @@ local CONFIG_DIR = (os.getenv("HOME") or "/tmp") .. "/.config/mpv/telemetry-conf
 local CHANNELS = {"throttle", "brake", "gear", "steering", "speed", "fuel"}
 
 local CHANNEL_DEFAULTS = {
-    throttle = { type = "bar", color_channel = "saturation", threshold = 0.2 },
-    brake    = { type = "bar", color_channel = "red",        threshold = 140 },
+    throttle = { type = "bar", active_r = 0, active_g = 200, active_b = 0, color_dist = 80 },
+    brake    = { type = "bar", active_r = 200, active_g = 0, active_b = 0, color_dist = 60 },
     gear     = { type = "digit" },
     steering = { type = "center-offset" },
     speed    = { type = "digits" },
-    fuel     = { type = "bar", color_channel = "blue", threshold = 80 },
+    fuel     = { type = "bar", active_r = 0, active_g = 100, active_b = 255, color_dist = 60 },
 }
 
 -- Default config for TDS Racing IMSA (1280x720)
 local DEFAULT_CONFIG = {
-    throttle = { type = "bar", x = 1135, y = 618, w = 120, h = 14, color_channel = "saturation", threshold = 0.2 },
-    brake    = { type = "bar", x = 1135, y = 645, w = 120, h = 14, color_channel = "red", threshold = 140 },
+    throttle = { type = "bar", x = 1135, y = 618, w = 120, h = 14, active_r = 0, active_g = 200, active_b = 0, color_dist = 80 },
+    brake    = { type = "bar", x = 1135, y = 645, w = 120, h = 14, active_r = 200, active_g = 0, active_b = 0, color_dist = 60 },
     gear     = { type = "digit", x = 1088, y = 625, w = 30, h = 30 },
     steering = { type = "center-offset", x = 110, y = 690, w = 110, h = 12, center_x = 165 },
 }
@@ -677,12 +677,10 @@ enter_calibration = function()
                         local r, g, b = get_pixel(cal_last_screenshot.data, cal_last_screenshot.stride, vx, vy)
                         local cfg = config[cal_channel] or {}
                         -- Auto-detect which channel is dominant
-                        if r > g and r > b then cfg.color_channel = "red"; cfg.threshold = math.floor(r * 0.7)
-                        elseif g > r and g > b then cfg.color_channel = "green"; cfg.threshold = math.floor(g * 0.7)
-                        elseif b > r and b > g then cfg.color_channel = "blue"; cfg.threshold = math.floor(b * 0.7)
-                        else cfg.color_channel = "saturation"; cfg.threshold = 0.2 end
+                        cfg.active_r = r; cfg.active_g = g; cfg.active_b = b
+                        cfg.color_dist = cfg.color_dist or 60
                         config[cal_channel] = cfg
-                        mp.osd_message(string.format("Color: %s (rgb %d,%d,%d)", cfg.color_channel, r, g, b))
+                        mp.osd_message(string.format("Active color set: rgb(%d,%d,%d)", r, g, b))
                     end
                     cal_mode = "draw"
                     render_calibration()

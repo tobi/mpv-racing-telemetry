@@ -14,30 +14,38 @@ end
 
 -- ── Bar sampling ──
 
+-- Color distance (squared euclidean, no sqrt for speed)
+function M.color_dist_sq(r1, g1, b1, r2, g2, b2)
+    local dr, dg, db = r1 - r2, g1 - g2, b1 - b2
+    return dr * dr + dg * dg + db * db
+end
+
 function M.sample_bar(data, stride, cfg)
     if not cfg.x then return 0 end
+
+    -- Active color from calibration (picked by user clicking on the filled part)
+    local ar = cfg.active_r or 200
+    local ag = cfg.active_g or 0
+    local ab = cfg.active_b or 0
+    -- Max color distance² to count as "active" (default 60² = 3600)
+    local max_dist_sq = (cfg.color_dist or 60) * (cfg.color_dist or 60)
+
     local last_active = -1
     for col = 0, cfg.w - 1 do
-        local hits, total = 0, 0
+        -- Collect color distances for this column, take median to reject outliers (text, noise)
+        local dists = {}
         for row = 0, cfg.h - 1 do
             local r, g, b = M.get_pixel(data, stride, cfg.x + col, cfg.y + row)
-            if cfg.color_channel == "saturation" then
-                local mx = math.max(r, g, b)
-                local mn = math.min(r, g, b)
-                if mx > 60 and (mx > 0 and (mx - mn) / mx or 0) > (cfg.threshold or 0.2) then
-                    hits = hits + 1
-                end
-            elseif cfg.color_channel == "red" then
-                if r > (cfg.threshold or 140) then hits = hits + 1 end
-            elseif cfg.color_channel == "green" then
-                if g > (cfg.threshold or 80) then hits = hits + 1 end
-            elseif cfg.color_channel == "blue" then
-                if b > (cfg.threshold or 80) then hits = hits + 1 end
-            end
-            total = total + 1
+            dists[#dists + 1] = M.color_dist_sq(r, g, b, ar, ag, ab)
         end
-        if total > 0 and (hits / total) > 0.3 then last_active = col end
+        table.sort(dists)
+        local median = dists[math.floor(#dists / 2) + 1] or 999999
+
+        if median < max_dist_sq then
+            last_active = col
+        end
     end
+
     if last_active < 0 then return 0 end
     return math.min(1.0, (last_active + 1) / cfg.w)
 end
