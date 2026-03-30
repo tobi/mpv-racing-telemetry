@@ -944,7 +944,7 @@ end
 -- KEY BINDINGS
 -- ══════════════════════════════════════════════════════════════
 
-mp.add_key_binding("ctrl+t", "toggle-telemetry", function()
+mp.add_key_binding("t", "toggle-telemetry", function()
     overlay_visible = not overlay_visible
     if overlay_visible then start_sampling(); mp.osd_message("Telemetry ON")
     else stop_sampling(); mp.osd_message("Telemetry OFF") end
