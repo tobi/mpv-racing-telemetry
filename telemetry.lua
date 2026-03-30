@@ -1030,7 +1030,7 @@ mp.register_event("file-loaded", function()
     if not digit_ocr then
         local ok, mod = pcall(require, "digit_ocr")
         if ok then
-            local model = script_dir .. "ml/digit_model_v3.onnx"
+            local model = script_dir .. "ml/digit_model_v4.onnx"
             if mod.init(model) then
                 digit_ocr = mod
             end

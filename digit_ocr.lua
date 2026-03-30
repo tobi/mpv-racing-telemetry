@@ -26,7 +26,7 @@ ffi.cdef[[
     const OrtApiBase* OrtGetApiBase(void);
 ]]
 
-local CLASSES = {"0","1","2","3","4","5","6","7","8","9","N"}
+local CLASSES = {"0","1","2","3","4","5","6","7","8","9"}
 local INPUT_SIZE = 32
 
 -- OrtApi function pointer indices (from onnxruntime_c_api.h 1.24.x struct OrtApi)
