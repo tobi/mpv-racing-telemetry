@@ -662,11 +662,11 @@ enter_calibration = function()
             end)
         end
 
-        -- Draw with mouse
-        mp.add_forced_key_binding("MBTN_LEFT", "cal-click", function(ev)
+        -- Draw with mouse (two-click: no drag needed)
+        mp.add_forced_key_binding("MBTN_LEFT", "cal-click", function()
             if not cal_active or not cal_channel then return end
 
-            if ev.event == "down" then
+            do
                 local mx, my = mp.get_mouse_pos()
                 -- Skip if in toolbar area
                 if my < 36 then return end
