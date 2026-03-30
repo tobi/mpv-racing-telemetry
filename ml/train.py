@@ -1,3 +1,13 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "torch>=2.0",
+#     "torchvision>=0.15",
+#     "datasets>=3.0",
+#     "pillow>=10,<12",
+#     "trackio>=0.20",
+# ]
+# ///
 """Train gear digit recognition model on tobil/racing-gears dataset.
 
 Input: 32x32 grayscale images normalized to [-1, 1]
@@ -5,7 +15,7 @@ Output: 10 classes (digits 0-9)
 Architecture: Small CNN exported to ONNX for use in mpv via LuaJIT FFI.
 
 Usage:
-    cd ml && uv run python train.py
+    uv run ml/train.py
 """
 
 import torch
@@ -14,7 +24,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from datasets import load_dataset
-from PIL import Image
+
 try:
     import trackio
     HAS_TRACKIO = True
@@ -70,6 +80,21 @@ class DigitCNN(nn.Module):
         return self.classifier(self.features(x))
 
 
+def compute_f1_macro(preds, targets, num_classes=NUM_CLASSES):
+    """Compute macro F1 score."""
+    f1s = []
+    for c in range(num_classes):
+        tp = sum(1 for p, t in zip(preds, targets) if p == c and t == c)
+        fp = sum(1 for p, t in zip(preds, targets) if p == c and t != c)
+        fn = sum(1 for p, t in zip(preds, targets) if p != c and t == c)
+        precision = tp / (tp + fp) if tp + fp > 0 else 0
+        recall = tp / (tp + fn) if tp + fn > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+        if tp + fn > 0:
+            f1s.append(f1)
+    return sum(f1s) / len(f1s) if f1s else 0
+
+
 def train():
     if torch.cuda.is_available():
         device = "cuda"
@@ -112,21 +137,6 @@ def train():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
-
-    def compute_f1_macro(preds, targets, num_classes=NUM_CLASSES):
-        """Compute macro F1 score."""
-        f1s = []
-        for c in range(num_classes):
-            tp = sum(1 for p, t in zip(preds, targets) if p == c and t == c)
-            fp = sum(1 for p, t in zip(preds, targets) if p == c and t != c)
-            fn = sum(1 for p, t in zip(preds, targets) if p != c and t == c)
-            precision = tp / (tp + fp) if tp + fp > 0 else 0
-            recall = tp / (tp + fn) if tp + fn > 0 else 0
-            f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
-            # Only include classes that have ground truth samples
-            if tp + fn > 0:
-                f1s.append(f1)
-        return sum(f1s) / len(f1s) if f1s else 0
 
     best_val_acc = 0
     best_val_f1 = 0

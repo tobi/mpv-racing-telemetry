@@ -19,3 +19,4 @@ mpv-shot*.jpg
 # ONNX test models
 digit_model_internal.onnx
 ml/data/
+ml/digit_model_best.pth
