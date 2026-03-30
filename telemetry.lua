@@ -47,8 +47,8 @@ local CHANNEL_DEFAULTS = {
 
 -- Default config for TDS Racing IMSA (1280x720)
 local DEFAULT_CONFIG = {
-    throttle = { type = "bar", x = 1135, y = 618, w = 120, h = 14, active_r = 0, active_g = 200, active_b = 0, color_dist = 80 },
-    brake    = { type = "bar", x = 1135, y = 645, w = 120, h = 14, active_r = 200, active_g = 0, active_b = 0, color_dist = 60 },
+    throttle = { type = "bar", x = 1130, y = 606, w = 82, h = 18, active_r = 0, active_g = 80, active_b = 0, color_dist = 35 },
+    brake    = { type = "bar", x = 1130, y = 634, w = 82, h = 20, active_r = 220, active_g = 30, active_b = 20, color_dist = 60 },
     gear     = { type = "digit", x = 1088, y = 625, w = 30, h = 30 },
     steering = { type = "center-offset", x = 110, y = 690, w = 110, h = 12, center_x = 165 },
 }
