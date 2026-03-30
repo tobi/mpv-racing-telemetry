@@ -320,7 +320,7 @@ render_overlay = function()
     -- Store for drag hit testing
     last_widget_rect = { x = wx, y = wy, w = ww, h = wh }
 
-    local stripe_w = 4 * scale
+    local stripe_w = 0
     local gear_d = wh * 0.85
     local bar_w = math.max(6, 12 * scale)
     local bar_gap = math.max(2, 4 * scale)
@@ -352,7 +352,6 @@ render_overlay = function()
 
     -- Background
     filled_rect(wx, wy, wx + ww, wy + wh, 10, 10, 10, 0.82)
-    filled_rect(wx, wy, wx + stripe_w, wy + wh, 225, 6, 0, 1)
 
     -- Grid
     for _, frac in ipairs({0.25, 0.5, 0.75}) do
