@@ -460,38 +460,48 @@ end
 -- ══════════════════════════════════════════════════════════════
 
 -- Convert mouse position to video pixel coordinates.
--- mp.get_mouse_pos() returns OSD-scaled coordinates.
--- We need to account for letterboxing/pillarboxing.
+-- Uses mpv's video-out-params to get the actual rendered video area.
 local function mouse_to_video()
     local mx, my = mp.get_mouse_pos()
     local osd_w, osd_h = mp.get_osd_size()
-    local vw = mp.get_property_number("dwidth", mp.get_property_number("width", 1280))
-    local vh = mp.get_property_number("dheight", mp.get_property_number("height", 720))
-    local vid_w = mp.get_property_number("width", 1280)
-    local vid_h = mp.get_property_number("height", 720)
+    local vid_w = mp.get_property_number("video-params/w", 1280)
+    local vid_h = mp.get_property_number("video-params/h", 720)
     if not osd_w or osd_w == 0 then return 0, 0 end
 
-    -- Video display area within OSD (accounting for letterbox/pillarbox)
-    local display_aspect = vw / vh
+    -- On macOS Retina, OSD coords may be in logical points.
+    -- mp.get_mouse_pos() and mp.get_osd_size() use the same coordinate system,
+    -- so we just need to find where the video is rendered within the OSD area.
+
+    -- Get display aspect ratio from mpv (accounts for pixel aspect ratio)
+    local dar = mp.get_property_number("video-params/aspect", vid_w / vid_h)
+
+    -- Calculate video rendering area within OSD
     local osd_aspect = osd_w / osd_h
     local render_w, render_h, offset_x, offset_y
-    if display_aspect > osd_aspect then
-        -- Video wider than window: pillarbox (black bars top/bottom... actually letterbox)
+    if dar > osd_aspect then
         render_w = osd_w
-        render_h = osd_w / display_aspect
+        render_h = osd_w / dar
         offset_x = 0
         offset_y = (osd_h - render_h) / 2
     else
-        -- Window wider than video: pillarbox (black bars left/right)
         render_h = osd_h
-        render_w = osd_h * display_aspect
+        render_w = osd_h * dar
         offset_x = (osd_w - render_w) / 2
         offset_y = 0
     end
 
-    -- Map mouse pos to video pixel coords
     local vx = (mx - offset_x) / render_w * vid_w
     local vy = (my - offset_y) / render_h * vid_h
+
+    -- Debug: show mapping info
+    if cal_active then
+        msg.verbose(string.format(
+            "mouse(%d,%d) osd(%dx%d) vid(%dx%d) dar=%.3f render(%d,%d %dx%d) -> video(%d,%d)",
+            mx, my, osd_w, osd_h, vid_w, vid_h, dar,
+            offset_x, offset_y, render_w, render_h,
+            math.floor(vx), math.floor(vy)))
+    end
+
     return math.floor(math.max(0, math.min(vid_w - 1, vx))),
            math.floor(math.max(0, math.min(vid_h - 1, vy)))
 end
@@ -623,6 +633,17 @@ render_calibration = function()
         ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs11\\b1\\fnmonospace}%dx%d",
             ass_color(225, 6, 0), x2 - x1, y2 - y1))
     end
+
+    -- Debug: show cursor video coords and pixel color under cursor
+    local dbg_vx, dbg_vy = mouse_to_video()
+    local dbg_info = string.format("cursor: %d,%d", dbg_vx, dbg_vy)
+    if cal_last_screenshot then
+        local pr, pg, pb = get_pixel(cal_last_screenshot.data, cal_last_screenshot.stride, dbg_vx, dbg_vy)
+        dbg_info = dbg_info .. string.format("  rgb(%d,%d,%d)", pr, pg, pb)
+    end
+    ass:new_event(); ass:pos(vw - 10, vh - 10)
+    ass:append(string.format("{\\an6\\bord0\\shad1\\4c&H000000&%s\\fs10\\fnmonospace}%s",
+        ass_color(255, 255, 0), dbg_info))
 
     cal_overlay.data = ass.text; cal_overlay:update()
 end
