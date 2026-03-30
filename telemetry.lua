@@ -699,14 +699,18 @@ enter_calibration = function()
                     return
                 end
 
-                -- Start drawing
+                -- Two-click rectangle: first click = corner 1, second click = corner 2
                 local vx, vy = screen_to_video(mx, my)
-                cal_drawing = true
-                cal_draw_start = { x = vx, y = vy }
-                cal_draw_cur = { x = vx, y = vy }
 
-            elseif ev.event == "up" then
-                if cal_drawing and cal_draw_start and cal_draw_cur then
+                if not cal_drawing then
+                    -- First click: set corner 1, start tracking
+                    cal_drawing = true
+                    cal_draw_start = { x = vx, y = vy }
+                    cal_draw_cur = { x = vx, y = vy }
+                    mp.osd_message("Corner 1 set — move to opposite corner and click")
+                else
+                    -- Second click: set corner 2, finalize rect
+                    cal_draw_cur = { x = vx, y = vy }
                     local x1 = math.min(cal_draw_start.x, cal_draw_cur.x)
                     local y1 = math.min(cal_draw_start.y, cal_draw_cur.y)
                     local x2 = math.max(cal_draw_start.x, cal_draw_cur.x)
@@ -726,13 +730,16 @@ enter_calibration = function()
                         config[cal_channel] = cfg
                         mp.osd_message(string.format("%s: %dx%d at (%d,%d)",
                             cal_channel:upper(), w, h, x1, y1))
+                    else
+                        mp.osd_message("Too small — try again")
                     end
+
+                    cal_drawing = false
+                    cal_draw_start = nil; cal_draw_cur = nil
+                    render_calibration()
                 end
-                cal_drawing = false
-                cal_draw_start = nil; cal_draw_cur = nil
-                render_calibration()
             end
-        end, { complex = true })
+        end)
 
         -- Mouse move polling is handled in on_tick (MOUSE_MOVE binding doesn't exist in mpv)
 
