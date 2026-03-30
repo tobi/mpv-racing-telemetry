@@ -734,15 +734,7 @@ enter_calibration = function()
             end
         end, { complex = true })
 
-        -- Mouse move for drawing
-        mp.add_forced_key_binding("MOUSE_MOVE", "cal-move", function()
-            if cal_drawing then
-                local mx, my = mp.get_mouse_pos()
-                local vx, vy = screen_to_video(mx, my)
-                cal_draw_cur = { x = vx, y = vy }
-                render_calibration()
-            end
-        end)
+        -- Mouse move polling is handled in on_tick (MOUSE_MOVE binding doesn't exist in mpv)
 
         -- Pick color mode
         mp.add_forced_key_binding("c", "cal-pick-color", function()
@@ -791,7 +783,6 @@ exit_calibration = function()
     if cal_bindings_active then
         for i = 1, 6 do mp.remove_key_binding("cal-ch-" .. i) end
         mp.remove_key_binding("cal-click")
-        mp.remove_key_binding("cal-move")
         mp.remove_key_binding("cal-pick-color")
         mp.remove_key_binding("cal-pick-center")
         mp.remove_key_binding("cal-save")
@@ -830,6 +821,12 @@ local function on_tick()
     end
 
     if cal_active then
+        -- Poll mouse position for rectangle drawing
+        if cal_drawing then
+            local mx, my = mp.get_mouse_pos()
+            local vx, vy = screen_to_video(mx, my)
+            cal_draw_cur = { x = vx, y = vy }
+        end
         -- In calibration, still sample for live preview
         pcall(process_frame)
         pcall(render_calibration)
