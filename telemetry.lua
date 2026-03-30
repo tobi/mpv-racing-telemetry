@@ -28,6 +28,7 @@ local utils = require("mp.utils")
 local script_dir = debug.getinfo(1, "S").source:match("@?(.*/)") or "./"
 package.path = script_dir .. "?.lua;" .. package.path
 local core = require("telemetry_core")
+local digit_ocr = nil  -- loaded lazily
 
 -- ══════════════════════════════════════════════════════════════
 -- CONFIG PERSISTENCE
@@ -49,7 +50,7 @@ local CHANNEL_DEFAULTS = {
 local DEFAULT_CONFIG = {
     throttle = { type = "bar", x = 1130, y = 612, w = 84, h = 16, active_r = 0, active_g = 158, active_b = 0, color_dist = 60 },
     brake    = { type = "bar", x = 1130, y = 634, w = 84, h = 20, active_r = 230, active_g = 30, active_b = 20, color_dist = 60 },
-    gear     = { type = "digit", x = 1083, y = 637, w = 8, h = 12, invert = true, threshold = 225 },
+    gear     = { type = "digit", x = 1075, y = 625, w = 30, h = 30 },
     steering = { type = "center-offset", x = 110, y = 690, w = 110, h = 12, center_x = 165 },
 }
 
@@ -279,7 +280,14 @@ local function process_frame()
             elseif cfg.type == "center-offset" then
                 raw_vals[ch] = sample_center_offset(data, stride, cfg)
             elseif cfg.type == "digit" then
-                raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
+                -- Try ONNX first, fall back to pattern matching
+                if digit_ocr then
+                    local d, c = digit_ocr.classify(data, stride, cfg.x, cfg.y, cfg.w, cfg.h)
+                    if d then raw_vals[ch] = tonumber(d) or 0
+                    else raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg) end
+                else
+                    raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
+                end
             elseif cfg.type == "digits" then
                 raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
             end
@@ -1017,6 +1025,19 @@ end)
 
 mp.register_event("file-loaded", function()
     msg.info("File loaded")
+
+    -- Initialize ONNX digit recognition (lazy, once)
+    if not digit_ocr then
+        local ok, mod = pcall(require, "digit_ocr")
+        if ok then
+            local model = script_dir .. "ml/digit_model_v3.onnx"
+            if mod.init(model) then
+                digit_ocr = mod
+            end
+        else
+            msg.verbose("ONNX digit OCR not available: " .. tostring(mod))
+        end
+    end
     if not load_most_recent() then
         msg.info("No calibration found — Ctrl+C to calibrate")
     end
