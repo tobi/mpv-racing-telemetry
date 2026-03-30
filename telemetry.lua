@@ -359,11 +359,12 @@ render_overlay = function()
     if not has_brake or not has_throttle then
         bars_x = bars_right - bar_w
     end
-    local trace_x = wx + stripe_w + 4 * scale
-    local trace_w = math.max(10, bars_x - trace_x - 6 * scale)
-    local trace_y, trace_h = wy + 2, wh - 4
-    local bar_h = wh - 14 * scale
-    local bar_y = wy + 12 * scale
+    local pad = 4 * scale
+    local trace_x = wx + stripe_w + pad
+    local trace_w = math.max(10, bars_x - trace_x - pad)
+    local trace_y, trace_h = wy + pad, wh - pad * 2
+    local bar_h = wh - pad * 2 - 10 * scale
+    local bar_y = wy + pad + 10 * scale
 
     local ass = assdraw.ass_new()
 
@@ -457,7 +458,7 @@ render_overlay = function()
         ass:bezier_curve(gear_cx-gr, gear_cy-k, gear_cx-k, gear_cy-gr, gear_cx, gear_cy-gr)
         ass:draw_stop()
 
-        if has_gear then
+        if has_gear and cur.gear > 0 then
             ass:new_event(); ass:pos(gear_cx, gear_cy)
             ass:append(string.format("{\\an5\\bord0\\shad0%s\\fs%d\\fnmonospace\\b1}%d",
                 ass_color(255,255,255), math.floor(gr * 1.1), cur.gear))
