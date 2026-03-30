@@ -973,6 +973,9 @@ mp.register_event("end-file", stop_sampling)
 
 mp.observe_property("vo-configured", "bool", function(_, configured)
     if configured and overlay_visible then
+        -- Remove old overlays before creating new ones to avoid duplicates
+        overlay:remove()
+        cal_overlay:remove()
         overlay = mp.create_osd_overlay("ass-events")
         cal_overlay = mp.create_osd_overlay("ass-events")
     end
