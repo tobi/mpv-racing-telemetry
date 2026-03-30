@@ -23,6 +23,10 @@
 local msg = require("mp.msg")
 local assdraw = require("mp.assdraw")
 local utils = require("mp.utils")
+
+-- Add script directory to Lua path so we can require telemetry_core
+local script_dir = debug.getinfo(1, "S").source:match("@?(.*/)") or "./"
+package.path = script_dir .. "?.lua;" .. package.path
 local core = require("telemetry_core")
 
 -- ══════════════════════════════════════════════════════════════
