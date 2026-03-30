@@ -193,8 +193,31 @@ local cal_overlay = mp.create_osd_overlay("ass-events") -- calibration overlay
 local timer = nil
 
 -- Overlay layout
-local widget_pos = { x = 0.5, y = 0.92 }
+local WIDGET_POS_FILE = CONFIG_DIR .. "/_widget_pos.json"
+local widget_pos = { x = 0.5, y = 0.75 }  -- center horizontal, 25% from bottom
 local scale = 1.0
+
+local function save_widget_pos()
+    ensure_config_dir()
+    local f = io.open(WIDGET_POS_FILE, "w")
+    if f then
+        f:write(string.format('{"x":%.4f,"y":%.4f,"scale":%.2f}', widget_pos.x, widget_pos.y, scale))
+        f:close()
+    end
+end
+
+local function load_widget_pos()
+    local f = io.open(WIDGET_POS_FILE, "r")
+    if f then
+        local raw = f:read("*a"); f:close()
+        local parsed = utils.parse_json(raw)
+        if parsed then
+            widget_pos.x = parsed.x or 0.5
+            widget_pos.y = parsed.y or 0.75
+            scale = parsed.scale or 1.0
+        end
+    end
+end
 local last_widget_rect = { x = 0, y = 0, w = 0, h = 0 }
 
 -- Drag state
@@ -370,29 +393,24 @@ render_overlay = function()
             ass:append(string.format("{\\bord%.1f\\shad0%s%s\\1a&HFF&\\p1}",
                 th, ass_bord_color(r, g, b),
                 string.format("\\3a&H%02X&", math.floor((1 - (alpha or 0.85)) * 255))))
+            -- Draw forward then retrace backward to form a closed shape
+            -- that hugs the line. Auto-close connects last point to first = invisible.
             ass:draw_start()
-            local started = false
-            local first_x, last_x = 0, 0
-            local baseline = trace_y + trace_h + th  -- just below visible area
+            local pts = {}
             for i = 0, n - 1 do
                 local e = trace[si + i]
                 if e then
                     local px = trace_x + (TRACE_LEN - n + i) * step
                     local py = trace_y + trace_h * (1 - get_val(e))
-                    if not started then
-                        first_x = px
-                        -- Start from below so the auto-close line is hidden
-                        ass:move_to(px, baseline)
-                        ass:line_to(px, py)
-                        started = true
-                    else
-                        ass:line_to(px, py)
-                    end
-                    last_x = px
+                    pts[#pts + 1] = { px, py }
                 end
             end
-            -- End below so the closing segment is invisible
-            ass:line_to(last_x, baseline)
+            if #pts >= 2 then
+                ass:move_to(pts[1][1], pts[1][2])
+                for i = 2, #pts do ass:line_to(pts[i][1], pts[i][2]) end
+                -- Retrace back so the auto-close is just the first segment overlapping itself
+                for i = #pts - 1, 1, -1 do ass:line_to(pts[i][1], pts[i][2]) end
+            end
             ass:draw_stop()
         end
         if has_gear then draw_trace(function(e) return (e.gear or 0) / 7 end, 255, 255, 255, 0.15) end
@@ -539,18 +557,27 @@ render_calibration = function()
         ass:draw_start(); ass:rect_cw(x1, y1, x2, y2); ass:draw_stop()
     end
 
+    -- Scale font sizes relative to OSD height (base = 720)
+    local fs = osd_h / 720  -- 1.0 at 720p, ~1.5 at 1080p, ~2.0 at 1440p
+    local fs_sm = math.floor(14 * fs)   -- small text
+    local fs_md = math.floor(18 * fs)   -- medium text
+    local fs_lg = math.floor(22 * fs)   -- large text
+    local toolbar_h = math.floor(44 * fs)
+
     -- Semi-transparent background
     filled_rect(0, 0, osd_w, osd_h, 0, 0, 0, 0.3)
 
     -- Top bar
-    filled_rect(0, 0, osd_w, 36, 15, 15, 15, 0.92)
+    filled_rect(0, 0, osd_w, toolbar_h, 15, 15, 15, 0.92)
 
     -- Title
-    ass:new_event(); ass:pos(12, 18)
-    ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs14\\b1}⚙ CALIBRATE", ass_color(255,255,255)))
+    ass:new_event(); ass:pos(math.floor(12*fs), toolbar_h/2)
+    ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs%d\\b1}⚙ CALIBRATE", ass_color(255,255,255), fs_lg))
 
     -- Channel buttons
-    local btn_x = 160
+    local btn_x = math.floor(180 * fs)
+    local btn_w = math.floor(80 * fs)
+    local btn_h = math.floor(28 * fs)
     for i, ch in ipairs(CHANNELS) do
         local is_sel = cal_channel == ch
         local is_cfg = config[ch] ~= nil
@@ -558,11 +585,11 @@ render_calibration = function()
         if is_sel then cr, cg, cb = 225, 6, 0
         elseif is_cfg then cr, cg, cb = 34, 204, 68 end
 
-        filled_rect(btn_x, 6, btn_x + 65, 30, cr, cg, cb, is_sel and 1 or 0.3)
-        ass:new_event(); ass:pos(btn_x + 32, 18)
-        ass:append(string.format("{\\an5\\bord0\\shad0%s\\fs11\\b1}%d:%s",
-            ass_color(255,255,255), i, ch:sub(1,5):upper()))
-        btn_x = btn_x + 72
+        filled_rect(btn_x, math.floor(6*fs), btn_x + btn_w, math.floor(6*fs) + btn_h, cr, cg, cb, is_sel and 1 or 0.3)
+        ass:new_event(); ass:pos(btn_x + btn_w/2, toolbar_h/2)
+        ass:append(string.format("{\\an5\\bord0\\shad0%s\\fs%d\\b1}%d:%s",
+            ass_color(255,255,255), fs_sm, i, ch:sub(1,5):upper()))
+        btn_x = btn_x + btn_w + math.floor(6*fs)
     end
 
     -- Mode / status
@@ -576,12 +603,11 @@ render_calibration = function()
     elseif cal_mode == "pick-center" then
         status = cal_channel:upper() .. ": Click the center/zero point"
     end
-    ass:new_event(); ass:pos(btn_x + 16, 18)
-    ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs11}%s", ass_color(180,180,180), status))
+    ass:new_event(); ass:pos(btn_x + math.floor(16*fs), toolbar_h/2)
+    ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs%d}%s", ass_color(180,180,180), fs_sm, status))
 
     -- Config name
-    ass:new_event(); ass:pos(osd_w - 10, 18)
-    ass:append(string.format("{\\an6\\bord0\\shad0%s\\fs11}[%s]", ass_color(100,100,100), config_name))
+
 
     -- Draw existing regions (video coords → OSD coords via video_to_osd)
     for _, ch in ipairs(CHANNELS) do
@@ -600,9 +626,9 @@ render_calibration = function()
             ass:draw_start(); ass:rect_cw(sx1, sy1, sx2, sy2); ass:draw_stop()
 
             -- Label
-            ass:new_event(); ass:pos(sx1 + 3, sy1 - 12)
-            ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs10\\b1}%s",
-                ass_color(cr, cg, cb), ch:upper()))
+            ass:new_event(); ass:pos(sx1 + 3, sy1 - math.floor(14*fs))
+            ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs%d\\b1}%s",
+                ass_color(cr, cg, cb), fs_sm, ch:upper()))
 
             -- Value preview
             if is_sel and cur[ch] then
@@ -612,9 +638,9 @@ render_calibration = function()
                 elseif cfg.type == "center-offset" then val_str = string.format("%.0f%%", (cur[ch] or 0) * 100)
                 end
                 if val_str then
-                    ass:new_event(); ass:pos(sx2 + 8, (sy1 + sy2) / 2)
-                    ass:append(string.format("{\\an4\\bord0\\shad1\\4c&H000000&%s\\fs14\\b1}→ %s",
-                        ass_color(255, 220, 0), val_str))
+                    ass:new_event(); ass:pos(sx2 + math.floor(8*fs), (sy1 + sy2) / 2)
+                    ass:append(string.format("{\\an4\\bord0\\shad1\\4c&H000000&%s\\fs%d\\b1}→ %s",
+                        ass_color(255, 220, 0), fs_md, val_str))
                 end
             end
 
@@ -645,9 +671,9 @@ render_calibration = function()
         -- Pixel dimensions (in video pixels)
         local pw = math.abs(cal_draw_cur.x - cal_draw_start.x)
         local ph = math.abs(cal_draw_cur.y - cal_draw_start.y)
-        ass:new_event(); ass:pos(sx1 + 4, sy1 - 14)
-        ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs11\\b1\\fnmonospace}%dx%d",
-            ass_color(225, 6, 0), pw, ph))
+        ass:new_event(); ass:pos(sx1 + 4, sy1 - math.floor(16*fs))
+        ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs%d\\b1\\fnmonospace}%dx%d",
+            ass_color(225, 6, 0), fs_sm, pw, ph))
     end
 
     -- ── Yellow cursor dot + debug info ──
@@ -681,14 +707,14 @@ render_calibration = function()
         local pr, pg, pb = get_pixel(cal_last_screenshot.data, cal_last_screenshot.stride, dbg_vx, dbg_vy)
         dbg_info = dbg_info .. string.format("  rgb(%d,%d,%d)", pr, pg, pb)
     end
-    ass:new_event(); ass:pos(mx + 12, my - 8)
-    ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs11\\fnmonospace\\b1}%s",
-        ass_color(255, 255, 0), dbg_info))
+    ass:new_event(); ass:pos(mx + math.floor(14*fs), my - math.floor(10*fs))
+    ass:append(string.format("{\\an1\\bord0\\shad1\\4c&H000000&%s\\fs%d\\fnmonospace\\b1}%s",
+        ass_color(255, 255, 0), fs_sm, dbg_info))
 
-    -- Also show in top-right corner for visibility
-    ass:new_event(); ass:pos(osd_w - 10, 18)
-    ass:append(string.format("{\\an6\\bord0\\shad0%s\\fs11\\fnmonospace}video: %d,%d  [%s]",
-        ass_color(100,100,100), dbg_vx, dbg_vy, config_name))
+    -- Also show in top-right corner
+    ass:new_event(); ass:pos(osd_w - math.floor(10*fs), toolbar_h/2)
+    ass:append(string.format("{\\an6\\bord0\\shad0%s\\fs%d\\fnmonospace}video: %d,%d  [%s]",
+        ass_color(100,100,100), fs_sm, dbg_vx, dbg_vy, config_name))
 
     cal_overlay.data = ass.text; cal_overlay:update()
 end
@@ -944,6 +970,7 @@ local preset_idx = 1
 mp.add_key_binding("ctrl+g", "cycle-telemetry-pos", function()
     preset_idx = preset_idx % #presets + 1
     widget_pos.x = presets[preset_idx].x; widget_pos.y = presets[preset_idx].y
+    save_widget_pos()
 end)
 
 -- Drag: click on widget to start, poll position in timer, click again to drop
@@ -952,8 +979,9 @@ mp.add_key_binding("MBTN_LEFT", "telemetry-drag", function()
     local mx, my = mp.get_mouse_pos()
 
     if dragging then
-        -- Drop it
+        -- Drop it and save position
         dragging = false
+        save_widget_pos()
         return
     end
 
@@ -972,10 +1000,12 @@ end)
 mp.add_key_binding("ctrl+=", "telemetry-bigger", function()
     scale = math.min(2.0, scale + 0.1)
     mp.osd_message(string.format("Scale: %.0f%%", scale * 100))
+    save_widget_pos()
 end)
 mp.add_key_binding("ctrl+-", "telemetry-smaller", function()
     scale = math.max(0.5, scale - 0.1)
     mp.osd_message(string.format("Scale: %.0f%%", scale * 100))
+    save_widget_pos()
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -1008,4 +1038,5 @@ end)
 
 -- Load on startup
 load_most_recent()
+load_widget_pos()
 msg.info("Racing Telemetry loaded. Ctrl+T=toggle Ctrl+C=calibrate Ctrl+N=cycle configs Ctrl+G=position Ctrl+±=size")
