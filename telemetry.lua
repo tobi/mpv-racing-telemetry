@@ -307,6 +307,8 @@ render_overlay = function()
 
     local osd_w, osd_h = mp.get_osd_size()
     if not osd_w or osd_w == 0 then return end
+    overlay.res_x = osd_w
+    overlay.res_y = osd_h
 
     local ww = osd_w * 0.30 * scale
     local wh = osd_h * 0.09 * scale
@@ -510,9 +512,11 @@ render_calibration = function()
         cal_overlay.data = ""; cal_overlay:update(); return
     end
 
-    -- Draw in OSD coordinates, transform video pixel coords via video_to_osd()
+    -- Sync overlay resolution to current OSD size so coordinates match
     local osd_w, osd_h = mp.get_osd_size()
     if not osd_w or osd_w == 0 then return end
+    cal_overlay.res_x = osd_w
+    cal_overlay.res_y = osd_h
 
     local ass = assdraw.ass_new()
 
