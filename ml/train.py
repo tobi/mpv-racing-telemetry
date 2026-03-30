@@ -15,7 +15,11 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from datasets import load_dataset
 from PIL import Image
-import trackio
+try:
+    import trackio
+    HAS_TRACKIO = True
+except Exception:
+    HAS_TRACKIO = False
 
 INPUT_SIZE = 32
 NUM_CLASSES = 10  # digits 0-9
@@ -70,10 +74,16 @@ def train():
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Device: {device}")
 
-    run = trackio.init(
-        project="racing-gears",
-        config={"device": device, "epochs": 80, "lr": 1e-3, "batch_size": 64},
-    )
+    global HAS_TRACKIO
+    if HAS_TRACKIO:
+        try:
+            trackio.init(
+                project="racing-gears",
+                config={"device": device, "epochs": 80, "lr": 1e-3, "batch_size": 64},
+            )
+        except Exception as e:
+            print(f"trackio init failed ({e}), continuing without tracking")
+            HAS_TRACKIO = False
 
     print("Loading tobil/racing-gears...")
     ds = load_dataset("tobil/racing-gears")
@@ -96,7 +106,23 @@ def train():
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
 
+    def compute_f1_macro(preds, targets, num_classes=NUM_CLASSES):
+        """Compute macro F1 score."""
+        f1s = []
+        for c in range(num_classes):
+            tp = sum(1 for p, t in zip(preds, targets) if p == c and t == c)
+            fp = sum(1 for p, t in zip(preds, targets) if p == c and t != c)
+            fn = sum(1 for p, t in zip(preds, targets) if p != c and t == c)
+            precision = tp / (tp + fp) if tp + fp > 0 else 0
+            recall = tp / (tp + fn) if tp + fn > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+            # Only include classes that have ground truth samples
+            if tp + fn > 0:
+                f1s.append(f1)
+        return sum(f1s) / len(f1s) if f1s else 0
+
     best_val_acc = 0
+    best_val_f1 = 0
     for epoch in range(80):
         model.train()
         train_loss, train_correct, train_total = 0, 0, 0
@@ -113,35 +139,44 @@ def train():
 
         model.eval()
         val_correct, val_total = 0, 0
+        val_preds, val_targets = [], []
         with torch.no_grad():
             for x, y in val_loader:
                 x, y = x.to(device), y.to(device)
                 out = model(x)
-                val_correct += (out.argmax(1) == y).sum().item()
+                preds = out.argmax(1)
+                val_correct += (preds == y).sum().item()
                 val_total += x.size(0)
+                val_preds.extend(preds.cpu().tolist())
+                val_targets.extend(y.cpu().tolist())
 
         train_acc = train_correct / train_total
         val_acc = val_correct / val_total if val_total > 0 else 0
+        val_f1 = compute_f1_macro(val_preds, val_targets)
         avg_loss = train_loss / train_total
-        scheduler.step(1 - val_acc)
+        scheduler.step(1 - val_f1)
 
-        trackio.log({
-            "train/loss": avg_loss,
-            "train/acc": train_acc,
-            "val/acc": val_acc,
-            "lr": optimizer.param_groups[0]["lr"],
-        }, step=epoch + 1)
+        if HAS_TRACKIO:
+            trackio.log({
+                "train/loss": avg_loss,
+                "train/acc": train_acc,
+                "val/acc": val_acc,
+                "val/f1_macro": val_f1,
+                "lr": optimizer.param_groups[0]["lr"],
+            }, step=epoch + 1)
 
-        if (epoch + 1) % 10 == 0 or val_acc > best_val_acc:
+        is_best = val_f1 > best_val_f1
+        if (epoch + 1) % 10 == 0 or is_best:
             print(f"  Epoch {epoch+1:3d}: loss={avg_loss:.4f} "
-                  f"train={train_acc:.3f} val={val_acc:.3f}"
-                  f"{'  ★' if val_acc > best_val_acc else ''}")
+                  f"train={train_acc:.3f} val_acc={val_acc:.3f} "
+                  f"val_f1={val_f1:.3f}{'  ★' if is_best else ''}")
 
-        if val_acc > best_val_acc:
+        if is_best:
             best_val_acc = val_acc
+            best_val_f1 = val_f1
             torch.save(model.state_dict(), "digit_model_best.pth")
 
-    print(f"\nBest val: {best_val_acc:.3f}")
+    print(f"\nBest val: acc={best_val_acc:.3f} f1={best_val_f1:.3f}")
 
     # Export to ONNX
     model.load_state_dict(torch.load("digit_model_best.pth", weights_only=True))
@@ -154,8 +189,9 @@ def train():
         dynamic_axes={"image": {0: "batch"}, "logits": {0: "batch"}},
     )
     print("Exported: digit_model_v4.onnx")
-    trackio.log({"best_val_acc": best_val_acc})
-    trackio.finish()
+    if HAS_TRACKIO:
+        trackio.log({"best_val_acc": best_val_acc, "best_val_f1": best_val_f1})
+        trackio.finish()
 
 
 if __name__ == "__main__":

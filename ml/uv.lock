@@ -924,7 +924,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.1.1" },
     { name = "torch", specifier = ">=2.10.0" },
     { name = "torchvision", specifier = ">=0.25.0" },
-    { name = "trackio", specifier = ">=0.2.2" },
+    { name = "trackio", specifier = "==0.2.2" },
 ]
 
 [[package]]

@@ -12,5 +12,5 @@ dependencies = [
     "pillow>=12.1.1",
     "torch>=2.10.0",
     "torchvision>=0.25.0",
-    "trackio>=0.2.2",
+    "trackio==0.2.2",
 ]
