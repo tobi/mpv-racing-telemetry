@@ -82,10 +82,12 @@ def train():
     global HAS_TRACKIO
     if HAS_TRACKIO:
         try:
-            trackio.init(
+            run = trackio.init(
                 project="racing-gears",
                 config={"device": device, "epochs": 80, "lr": 1e-3, "batch_size": 64},
             )
+            print(f"Trackio run: {run.name}")
+            print('View: trackio show --project "racing-gears"')
         except Exception as e:
             print(f"trackio init failed ({e}), continuing without tracking")
             HAS_TRACKIO = False

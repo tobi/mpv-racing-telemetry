@@ -9,8 +9,8 @@ dependencies = [
     "onnx>=1.20.1",
     "onnxruntime>=1.24.4",
     "onnxscript>=0.6.2",
-    "pillow>=12.1.1",
+    "pillow>=10,<12",
     "torch>=2.10.0",
     "torchvision>=0.25.0",
-    "trackio==0.2.2",
+    "trackio>=0.20",
 ]
