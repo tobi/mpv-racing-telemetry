@@ -6,6 +6,7 @@
 #     "datasets>=3.0",
 #     "pillow>=10,<12",
 #     "trackio>=0.20",
+#     "onnxscript>=0.1",
 # ]
 # ///
 """Train gear digit recognition model on tobil/racing-gears dataset.
