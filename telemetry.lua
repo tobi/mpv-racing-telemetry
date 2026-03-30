@@ -932,21 +932,28 @@ mp.add_key_binding("ctrl+g", "cycle-telemetry-pos", function()
     widget_pos.x = presets[preset_idx].x; widget_pos.y = presets[preset_idx].y
 end)
 
-mp.add_key_binding("MBTN_LEFT", "telemetry-drag", function(ev)
+-- Drag: click on widget to start, poll position in timer, click again to drop
+mp.add_key_binding("MBTN_LEFT", "telemetry-drag", function()
     if cal_active then return end
-    if ev.event == "down" then
-        local mx, my = mp.get_mouse_pos()
-        local r = last_widget_rect
-        if mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h then
-            dragging = true
-            local osd_w, osd_h = mp.get_osd_size()
-            if osd_w and osd_w > 0 then
-                drag_offset.x = widget_pos.x - mx / osd_w
-                drag_offset.y = widget_pos.y - my / osd_h
-            end
+    local mx, my = mp.get_mouse_pos()
+
+    if dragging then
+        -- Drop it
+        dragging = false
+        return
+    end
+
+    -- Check if click is on the widget
+    local r = last_widget_rect
+    if mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h then
+        dragging = true
+        local osd_w, osd_h = mp.get_osd_size()
+        if osd_w and osd_w > 0 then
+            drag_offset.x = widget_pos.x - mx / osd_w
+            drag_offset.y = widget_pos.y - my / osd_h
         end
-    elseif ev.event == "up" then dragging = false end
-end, { complex = true })
+    end
+end)
 
 mp.add_key_binding("ctrl+=", "telemetry-bigger", function()
     scale = math.min(2.0, scale + 0.1)
