@@ -364,27 +364,24 @@ render_overlay = function()
         local si = trace_idx - n + 1
         local step = trace_w / TRACE_LEN
         local function draw_trace(get_val, r, g, b, alpha)
-            for i = 1, n - 1 do
-                local e0, e1 = trace[si + i - 1], trace[si + i]
-                if e0 and e1 then
-                    local x0 = trace_x + (TRACE_LEN - n + i - 1) * step
-                    local x1 = trace_x + (TRACE_LEN - n + i) * step
-                    local y0 = trace_y + trace_h * (1 - get_val(e0))
-                    local y1 = trace_y + trace_h * (1 - get_val(e1))
-                    local th = 4 * scale
-                    -- Perpendicular offset so thickness is constant regardless of slope
-                    local dx, dy = x1 - x0, y1 - y0
-                    local len = math.sqrt(dx*dx + dy*dy)
-                    if len < 0.01 then len = 0.01 end
-                    local nx, ny = -dy/len * th/2, dx/len * th/2
-                    ass:new_event(); ass:pos(0, 0)
-                    ass:append(string.format("{\\bord0\\shad0%s%s\\p1}", ass_color(r, g, b), ass_alpha(alpha or 0.85)))
-                    ass:draw_start()
-                    ass:move_to(x0+nx, y0+ny); ass:line_to(x1+nx, y1+ny)
-                    ass:line_to(x1-nx, y1-ny); ass:line_to(x0-nx, y0-ny)
-                    ass:draw_stop()
+            local th = 2 * scale
+            ass:new_event(); ass:pos(0, 0)
+            -- Use border for line thickness — always perpendicular, one draw call
+            ass:append(string.format("{\\bord%.1f\\shad0%s%s\\1a&HFF&\\p1}",
+                th, ass_bord_color(r, g, b),
+                string.format("\\3a&H%02X&", math.floor((1 - (alpha or 0.85)) * 255))))
+            ass:draw_start()
+            local started = false
+            for i = 0, n - 1 do
+                local e = trace[si + i]
+                if e then
+                    local px = trace_x + (TRACE_LEN - n + i) * step
+                    local py = trace_y + trace_h * (1 - get_val(e))
+                    if not started then ass:move_to(px, py); started = true
+                    else ass:line_to(px, py) end
                 end
             end
+            ass:draw_stop()
         end
         if has_gear then draw_trace(function(e) return (e.gear or 0) / 7 end, 255, 255, 255, 0.15) end
         if has_throttle then draw_trace(function(e) return e.throttle or 0 end, 34, 204, 68, 0.9) end
