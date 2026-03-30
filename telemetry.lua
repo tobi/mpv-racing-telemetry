@@ -865,7 +865,8 @@ local function on_tick()
         end
     end
 
-    if not dragging and not cal_active then
+    local paused = mp.get_property_bool("pause", false)
+    if not dragging and not cal_active and not paused then
         local ok, err = pcall(process_frame)
         if not ok then
             frame_failures = frame_failures + 1
