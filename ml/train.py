@@ -5,7 +5,7 @@ Output: 10 classes (digits 0-9)
 Architecture: Small CNN exported to ONNX for use in mpv via LuaJIT FFI.
 
 Usage:
-    cd ml && uv run python train_gear.py
+    cd ml && uv run python train.py
 """
 
 import torch
@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from datasets import load_dataset
 from PIL import Image
+import trackio
 
 INPUT_SIZE = 32
 NUM_CLASSES = 10  # digits 0-9
@@ -69,6 +70,11 @@ def train():
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Device: {device}")
 
+    run = trackio.init(
+        project="racing-gears",
+        config={"device": device, "epochs": 80, "lr": 1e-3, "batch_size": 64},
+    )
+
     print("Loading tobil/racing-gears...")
     ds = load_dataset("tobil/racing-gears")
 
@@ -116,10 +122,18 @@ def train():
 
         train_acc = train_correct / train_total
         val_acc = val_correct / val_total if val_total > 0 else 0
+        avg_loss = train_loss / train_total
         scheduler.step(1 - val_acc)
 
+        trackio.log({
+            "train/loss": avg_loss,
+            "train/acc": train_acc,
+            "val/acc": val_acc,
+            "lr": optimizer.param_groups[0]["lr"],
+        }, step=epoch + 1)
+
         if (epoch + 1) % 10 == 0 or val_acc > best_val_acc:
-            print(f"  Epoch {epoch+1:3d}: loss={train_loss/train_total:.4f} "
+            print(f"  Epoch {epoch+1:3d}: loss={avg_loss:.4f} "
                   f"train={train_acc:.3f} val={val_acc:.3f}"
                   f"{'  ★' if val_acc > best_val_acc else ''}")
 
@@ -140,6 +154,8 @@ def train():
         dynamic_axes={"image": {0: "batch"}, "logits": {0: "batch"}},
     )
     print("Exported: digit_model_v4.onnx")
+    trackio.log({"best_val_acc": best_val_acc})
+    trackio.finish()
 
 
 if __name__ == "__main__":
