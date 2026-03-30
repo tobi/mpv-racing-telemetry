@@ -372,11 +372,16 @@ render_overlay = function()
                     local y0 = trace_y + trace_h * (1 - get_val(e0))
                     local y1 = trace_y + trace_h * (1 - get_val(e1))
                     local th = 4 * scale
+                    -- Perpendicular offset so thickness is constant regardless of slope
+                    local dx, dy = x1 - x0, y1 - y0
+                    local len = math.sqrt(dx*dx + dy*dy)
+                    if len < 0.01 then len = 0.01 end
+                    local nx, ny = -dy/len * th/2, dx/len * th/2
                     ass:new_event(); ass:pos(0, 0)
                     ass:append(string.format("{\\bord0\\shad0%s%s\\p1}", ass_color(r, g, b), ass_alpha(alpha or 0.85)))
                     ass:draw_start()
-                    ass:move_to(x0, y0 - th/2); ass:line_to(x1, y1 - th/2)
-                    ass:line_to(x1, y1 + th/2); ass:line_to(x0, y0 + th/2)
+                    ass:move_to(x0+nx, y0+ny); ass:line_to(x1+nx, y1+ny)
+                    ass:line_to(x1-nx, y1-ny); ass:line_to(x0-nx, y0-ny)
                     ass:draw_stop()
                 end
             end
