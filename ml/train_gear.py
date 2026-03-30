@@ -1,8 +1,8 @@
-"""Train gear digit recognition model on real video frame crops.
+"""Train gear digit recognition model on tobil/racing-gears dataset.
 
 Input: 32x32 grayscale images normalized to [-1, 1]
-Output: 7 classes (1-6 + unknown/0)
-Architecture: Small CNN matching the existing digit_model format.
+Output: 10 classes (digits 0-9)
+Architecture: Small CNN exported to ONNX for use in mpv via LuaJIT FFI.
 
 Usage:
     cd ml && uv run python train_gear.py
@@ -11,50 +11,35 @@ Usage:
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
+from datasets import load_dataset
 from PIL import Image
-from pathlib import Path
-import random
 
 INPUT_SIZE = 32
-# Classes: 0=unknown, 1-6=gears  (keep compatible with original 0-9+N model)
-CLASSES = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "N"]
-NUM_CLASSES = len(CLASSES)
+NUM_CLASSES = 10  # digits 0-9
 
-class GearDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.samples = []
+
+class HFDataset(Dataset):
+    """Wraps a HuggingFace dataset split for PyTorch."""
+    def __init__(self, hf_split, transform=None):
+        self.data = hf_split
         self.transform = transform
-        root = Path(root_dir)
-        for gear_dir in root.iterdir():
-            if not gear_dir.is_dir():
-                continue
-            gear = gear_dir.name
-            if gear not in CLASSES:
-                continue
-            label = CLASSES.index(gear)
-            for img_path in gear_dir.iterdir():
-                if img_path.suffix in ('.png', '.jpg'):
-                    self.samples.append((str(img_path), label))
-        random.shuffle(self.samples)
-        print(f"Loaded {len(self.samples)} images from {root_dir}")
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        path, label = self.samples[idx]
-        img = Image.open(path).convert('L').resize((INPUT_SIZE, INPUT_SIZE))
+        ex = self.data[idx]
+        img = ex['image'].convert('L').resize((INPUT_SIZE, INPUT_SIZE))
         x = transforms.ToTensor()(img)  # [0, 1]
         x = x * 2 - 1  # [-1, 1]
         if self.transform:
             x = self.transform(x)
-        return x, label
+        return x, ex['label']
 
 
 class DigitCNN(nn.Module):
-    """Same architecture as the existing digit_model for compatibility."""
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
@@ -82,38 +67,23 @@ class DigitCNN(nn.Module):
 
 def train():
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"Using device: {device}")
+    print(f"Device: {device}")
 
-    # Data augmentation for training
+    print("Loading tobil/racing-gears...")
+    ds = load_dataset("tobil/racing-gears")
+
     train_transform = transforms.Compose([
         transforms.RandomAffine(degrees=3, translate=(0.1, 0.1), scale=(0.9, 1.1)),
         transforms.GaussianBlur(3, sigma=(0.1, 0.5)),
     ])
 
-    dataset = GearDataset("data/gear_real", transform=None)
+    train_set = HFDataset(ds['train'], transform=train_transform)
+    val_set = HFDataset(ds['validation'])
 
-    # 80/20 split
-    n_train = int(0.8 * len(dataset))
-    n_val = len(dataset) - n_train
-    train_set, val_set = random_split(dataset, [n_train, n_val],
-                                      generator=torch.Generator().manual_seed(42))
+    train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_set, batch_size=64, shuffle=False, num_workers=0)
 
-    # Apply augmentation only to training
-    class AugDataset(Dataset):
-        def __init__(self, subset, transform):
-            self.subset = subset
-            self.transform = transform
-        def __len__(self):
-            return len(self.subset)
-        def __getitem__(self, idx):
-            x, y = self.subset[idx]
-            if self.transform:
-                x = self.transform(x)
-            return x, y
-
-    train_loader = DataLoader(AugDataset(train_set, train_transform),
-                              batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=64, shuffle=False)
+    print(f"Train: {len(train_set)}, Val: {len(val_set)}")
 
     model = DigitCNN().to(device)
     criterion = nn.CrossEntropyLoss()
@@ -121,8 +91,7 @@ def train():
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10, factor=0.5)
 
     best_val_acc = 0
-    for epoch in range(100):
-        # Train
+    for epoch in range(80):
         model.train()
         train_loss, train_correct, train_total = 0, 0, 0
         for x, y in train_loader:
@@ -136,7 +105,6 @@ def train():
             train_correct += (out.argmax(1) == y).sum().item()
             train_total += x.size(0)
 
-        # Validate
         model.eval()
         val_correct, val_total = 0, 0
         with torch.no_grad():
@@ -151,15 +119,15 @@ def train():
         scheduler.step(1 - val_acc)
 
         if (epoch + 1) % 10 == 0 or val_acc > best_val_acc:
-            print(f"Epoch {epoch+1:3d}: train_loss={train_loss/train_total:.4f} "
-                  f"train_acc={train_acc:.3f} val_acc={val_acc:.3f}"
-                  f"{' ★' if val_acc > best_val_acc else ''}")
+            print(f"  Epoch {epoch+1:3d}: loss={train_loss/train_total:.4f} "
+                  f"train={train_acc:.3f} val={val_acc:.3f}"
+                  f"{'  ★' if val_acc > best_val_acc else ''}")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), "digit_model_best.pth")
 
-    print(f"\nBest val accuracy: {best_val_acc:.3f}")
+    print(f"\nBest val: {best_val_acc:.3f}")
 
     # Export to ONNX
     model.load_state_dict(torch.load("digit_model_best.pth", weights_only=True))
@@ -171,7 +139,7 @@ def train():
         output_names=["logits"],
         dynamic_axes={"image": {0: "batch"}, "logits": {0: "batch"}},
     )
-    print(f"Exported to digit_model_v4.onnx")
+    print("Exported: digit_model_v4.onnx")
 
 
 if __name__ == "__main__":
