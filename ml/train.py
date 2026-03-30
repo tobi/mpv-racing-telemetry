@@ -81,17 +81,19 @@ class DigitCNN(nn.Module):
 
 
 def compute_f1_macro(preds, targets, num_classes=NUM_CLASSES):
-    """Compute macro F1 score."""
+    """Compute macro F1 score using tensor ops."""
+    p = torch.tensor(preds)
+    t = torch.tensor(targets)
     f1s = []
     for c in range(num_classes):
-        tp = sum(1 for p, t in zip(preds, targets) if p == c and t == c)
-        fp = sum(1 for p, t in zip(preds, targets) if p == c and t != c)
-        fn = sum(1 for p, t in zip(preds, targets) if p != c and t == c)
-        precision = tp / (tp + fp) if tp + fp > 0 else 0
-        recall = tp / (tp + fn) if tp + fn > 0 else 0
-        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
-        if tp + fn > 0:
-            f1s.append(f1)
+        tp = ((p == c) & (t == c)).sum().item()
+        fp = ((p == c) & (t != c)).sum().item()
+        fn = ((p != c) & (t == c)).sum().item()
+        if tp + fn == 0:
+            continue
+        prec = tp / (tp + fp) if tp + fp > 0 else 0
+        rec = tp / (tp + fn) if tp + fn > 0 else 0
+        f1s.append(2 * prec * rec / (prec + rec) if prec + rec > 0 else 0)
     return sum(f1s) / len(f1s) if f1s else 0
 
 
@@ -128,8 +130,9 @@ def train():
     train_set = HFDataset(ds['train'], transform=train_transform)
     val_set = HFDataset(ds['validation'])
 
-    train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=0)
-    val_loader = DataLoader(val_set, batch_size=64, shuffle=False, num_workers=0)
+    workers = 4 if device != "mps" else 0
+    train_loader = DataLoader(train_set, batch_size=64, shuffle=True, num_workers=workers)
+    val_loader = DataLoader(val_set, batch_size=64, shuffle=False, num_workers=workers)
 
     print(f"Train: {len(train_set)}, Val: {len(val_set)}")
 
