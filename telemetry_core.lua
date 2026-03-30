@@ -23,16 +23,14 @@ end
 function M.sample_bar(data, stride, cfg)
     if not cfg.x then return 0 end
 
-    -- Active color from calibration (picked by user clicking on the filled part)
     local ar = cfg.active_r or 200
     local ag = cfg.active_g or 0
     local ab = cfg.active_b or 0
-    -- Max color distance² to count as "active" (default 60² = 3600)
     local max_dist_sq = (cfg.color_dist or 60) * (cfg.color_dist or 60)
 
-    local last_active = -1
-    for col = 0, cfg.w - 1 do
-        -- Collect color distances for this column, take median to reject outliers (text, noise)
+    -- Scan from the RIGHT to find the rightmost column with active pixels.
+    -- Use median across column height to reject text/noise outliers.
+    for col = cfg.w - 1, 0, -1 do
         local dists = {}
         for row = 0, cfg.h - 1 do
             local r, g, b = M.get_pixel(data, stride, cfg.x + col, cfg.y + row)
@@ -42,12 +40,11 @@ function M.sample_bar(data, stride, cfg)
         local median = dists[math.floor(#dists / 2) + 1] or 999999
 
         if median < max_dist_sq then
-            last_active = col
+            return math.min(1.0, (col + 1) / cfg.w)
         end
     end
 
-    if last_active < 0 then return 0 end
-    return math.min(1.0, (last_active + 1) / cfg.w)
+    return 0
 end
 
 -- ── Center-offset sampling ──
