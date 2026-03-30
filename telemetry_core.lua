@@ -1,11 +1,18 @@
--- Pure functions extracted from telemetry.lua for testing
+-- telemetry_core.lua — pure functions, no mpv dependency
+-- Used by telemetry.lua and testable standalone.
+
 local M = {}
 
+-- ── Pixel access ──
+
 function M.get_pixel(data, stride, x, y)
+    if x < 0 or y < 0 then return 0, 0, 0 end
     local offset = y * stride + x * 4
     if offset + 3 > #data or offset < 0 then return 0, 0, 0 end
-    return data:byte(offset + 3), data:byte(offset + 2), data:byte(offset + 1)
+    return data:byte(offset + 3), data:byte(offset + 2), data:byte(offset + 1) -- r, g, b
 end
+
+-- ── Bar sampling ──
 
 function M.sample_bar(data, stride, cfg)
     if not cfg.x then return 0 end
@@ -17,7 +24,9 @@ function M.sample_bar(data, stride, cfg)
             if cfg.color_channel == "saturation" then
                 local mx = math.max(r, g, b)
                 local mn = math.min(r, g, b)
-                if mx > 60 and (mx > 0 and (mx - mn) / mx or 0) > (cfg.threshold or 0.2) then hits = hits + 1 end
+                if mx > 60 and (mx > 0 and (mx - mn) / mx or 0) > (cfg.threshold or 0.2) then
+                    hits = hits + 1
+                end
             elseif cfg.color_channel == "red" then
                 if r > (cfg.threshold or 140) then hits = hits + 1 end
             elseif cfg.color_channel == "green" then
@@ -32,6 +41,8 @@ function M.sample_bar(data, stride, cfg)
     if last_active < 0 then return 0 end
     return math.min(1.0, (last_active + 1) / cfg.w)
 end
+
+-- ── Center-offset sampling ──
 
 function M.sample_center_offset(data, stride, cfg)
     if not cfg.x then return 0 end
@@ -57,6 +68,21 @@ function M.sample_center_offset(data, stride, cfg)
     return math.max(-1, math.min(1, (wsum / wtot - cx) / (cfg.w / 2)))
 end
 
+-- ── Digit OCR ──
+
+M.DIGIT_PATTERNS = {
+    [0] = {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
+    [1] = {0,0,1,0,0, 0,1,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,1,1,1,0},
+    [2] = {0,1,1,1,0, 1,0,0,0,1, 0,0,0,0,1, 0,0,1,1,0, 0,1,0,0,0, 1,0,0,0,0, 1,1,1,1,1},
+    [3] = {0,1,1,1,0, 1,0,0,0,1, 0,0,0,0,1, 0,0,1,1,0, 0,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
+    [4] = {0,0,0,1,0, 0,0,1,1,0, 0,1,0,1,0, 1,0,0,1,0, 1,1,1,1,1, 0,0,0,1,0, 0,0,0,1,0},
+    [5] = {1,1,1,1,1, 1,0,0,0,0, 1,1,1,1,0, 0,0,0,0,1, 0,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
+    [6] = {0,1,1,1,0, 1,0,0,0,0, 1,0,0,0,0, 1,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
+    [7] = {1,1,1,1,1, 0,0,0,0,1, 0,0,0,1,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0},
+    [8] = {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
+    [9] = {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,1, 0,0,0,0,1, 0,0,0,0,1, 0,1,1,1,0},
+}
+
 function M.sample_digit(data, stride, x, y, w, h)
     if not x then return 0 end
     local gw, gh = 5, 7
@@ -75,26 +101,16 @@ function M.sample_digit(data, stride, x, y, w, h)
             grid[gy * gw + gx] = (c > 0 and s / c > 128) and 1 or 0
         end
     end
-    local patterns = {
-        [0] = {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
-        [1] = {0,0,1,0,0, 0,1,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,1,1,1,0},
-        [2] = {0,1,1,1,0, 1,0,0,0,1, 0,0,0,0,1, 0,0,1,1,0, 0,1,0,0,0, 1,0,0,0,0, 1,1,1,1,1},
-        [3] = {0,1,1,1,0, 1,0,0,0,1, 0,0,0,0,1, 0,0,1,1,0, 0,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
-        [4] = {0,0,0,1,0, 0,0,1,1,0, 0,1,0,1,0, 1,0,0,1,0, 1,1,1,1,1, 0,0,0,1,0, 0,0,0,1,0},
-        [5] = {1,1,1,1,1, 1,0,0,0,0, 1,1,1,1,0, 0,0,0,0,1, 0,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
-        [6] = {0,1,1,1,0, 1,0,0,0,0, 1,0,0,0,0, 1,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
-        [7] = {1,1,1,1,1, 0,0,0,0,1, 0,0,0,1,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0},
-        [8] = {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0},
-        [9] = {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,1, 0,0,0,0,1, 0,0,0,0,1, 0,1,1,1,0},
-    }
     local best, best_s = 0, -1
     for d = 0, 9 do
         local s = 0
-        for i = 0, 34 do if grid[i] == patterns[d][i + 1] then s = s + 1 end end
+        for i = 0, 34 do if grid[i] == M.DIGIT_PATTERNS[d][i + 1] then s = s + 1 end end
         if s > best_s then best_s = s; best = d end
     end
     return best
 end
+
+-- ── ASS formatting ──
 
 function M.ass_color(r, g, b)
     return string.format("\\1c&H%02X%02X%02X&", b, g, r)
