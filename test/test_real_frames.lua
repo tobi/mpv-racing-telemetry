@@ -38,6 +38,9 @@ local THROTTLE = { type="bar", x=1130, y=612, w=84, h=16,
 local BRAKE = { type="bar", x=1130, y=634, w=84, h=20,
     active_r=230, active_g=30, active_b=20, color_dist=60 }
 
+-- Gear: white circle with dark digit carved out — inverted OCR
+local GEAR = { type="digit", x=1083, y=637, w=8, h=12, invert=true, threshold=225 }
+
 -- ══════════════════════════════════════════════════════════════
 -- frame_0540: ~68% throttle, 0% brake, gear 2
 -- ══════════════════════════════════════════════════════════════
@@ -53,6 +56,11 @@ end)
 test("brake 0%", function()
     local val = core.sample_bar(f0540, STRIDE, BRAKE)
     near(val, 0.0, 0.05, "brake")
+end)
+
+test("gear = 2", function()
+    local val = core.sample_digit(f0540, STRIDE, GEAR.x, GEAR.y, GEAR.w, GEAR.h, GEAR)
+    assert(val == 2, string.format("expected 2, got %d", val))
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -73,6 +81,11 @@ test("brake > 0% (active)", function()
     assert(val > 0.10, string.format("expected brake > 10%%, got %.0f%%", val * 100))
 end)
 
+test("gear = 3", function()
+    local val = core.sample_digit(f0558, STRIDE, GEAR.x, GEAR.y, GEAR.w, GEAR.h, GEAR)
+    assert(val == 3, string.format("expected 3, got %d", val))
+end)
+
 -- ══════════════════════════════════════════════════════════════
 -- frame_0559: 0% throttle, light braking, gear 2
 -- ══════════════════════════════════════════════════════════════
@@ -89,6 +102,33 @@ test("brake > 0% (some braking)", function()
     local val = core.sample_bar(f0559, STRIDE, BRAKE)
     assert(val > 0.05, string.format("expected brake > 5%%, got %.0f%%", val * 100))
 end)
+
+test("gear = 2", function()
+    local val = core.sample_digit(f0559, STRIDE, GEAR.x, GEAR.y, GEAR.w, GEAR.h, GEAR)
+    assert(val == 2, string.format("expected 2, got %d", val))
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- Gear detection across all captured gears
+-- ══════════════════════════════════════════════════════════════
+print("\ngear detection (all gears)")
+
+local gear_frames = {
+    { "frame_0370.raw", 1, "t=370 gear 1" },
+    { "frame_0540.raw", 2, "t=340 gear 2" },
+    { "frame_0558.raw", 3, "t=398 gear 3" },
+    { "frame_0865.raw", 4, "t=865 gear 4" },
+    { "frame_0550.raw", 5, "t=550 gear 5" },
+    { "frame_0553.raw", 6, "t=553 gear 6" },
+}
+
+for _, info in ipairs(gear_frames) do
+    test(info[3], function()
+        local data = load_frame(info[1])
+        local val = core.sample_digit(data, STRIDE, GEAR.x, GEAR.y, GEAR.w, GEAR.h, GEAR)
+        assert(val == info[2], string.format("expected %d, got %d", info[2], val))
+    end)
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- Cross-frame consistency: throttle in 0558/0559 should be less than in 0540

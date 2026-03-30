@@ -49,7 +49,7 @@ local CHANNEL_DEFAULTS = {
 local DEFAULT_CONFIG = {
     throttle = { type = "bar", x = 1130, y = 612, w = 84, h = 16, active_r = 0, active_g = 158, active_b = 0, color_dist = 60 },
     brake    = { type = "bar", x = 1130, y = 634, w = 84, h = 20, active_r = 230, active_g = 30, active_b = 20, color_dist = 60 },
-    gear     = { type = "digit", x = 1088, y = 625, w = 30, h = 30 },
+    gear     = { type = "digit", x = 1083, y = 637, w = 8, h = 12, invert = true, threshold = 225 },
     steering = { type = "center-offset", x = 110, y = 690, w = 110, h = 12, center_x = 165 },
 }
 
@@ -279,9 +279,9 @@ local function process_frame()
             elseif cfg.type == "center-offset" then
                 raw_vals[ch] = sample_center_offset(data, stride, cfg)
             elseif cfg.type == "digit" then
-                raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h)
+                raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
             elseif cfg.type == "digits" then
-                raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h)
+                raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
             end
         end
     end
