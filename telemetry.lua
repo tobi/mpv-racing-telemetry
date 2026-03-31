@@ -990,7 +990,7 @@ end
 
 local function start_sampling()
     if timer then timer:kill() end
-    timer = mp.add_periodic_timer(1/30, on_tick)  -- 30 Hz
+    timer = mp.add_periodic_timer(1/10, on_tick)  -- 10 Hz
 end
 
 local function stop_sampling()
