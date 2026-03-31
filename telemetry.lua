@@ -368,7 +368,7 @@ render_overlay = function()
     if not has_brake or not has_throttle then
         bars_x = bars_right - bar_w
     end
-    local pad = 4 * scale
+    local pad = 10 * scale
     local trace_x = wx + stripe_w + pad
     local trace_w = math.max(10, bars_x - trace_x - pad)
     local trace_y, trace_h = wy + pad, wh - pad * 2
@@ -397,7 +397,7 @@ render_overlay = function()
         local si = trace_idx - n + 1
         local step = trace_w / TRACE_LEN
         local function draw_trace(get_val, r, g, b, alpha)
-            local th = 2 * scale
+            local th = 1.5 * scale
             ass:new_event(); ass:pos(0, 0)
             -- Use border for line thickness — always perpendicular, one draw call
             ass:append(string.format("{\\bord%.1f\\shad0%s%s\\1a&HFF&\\p1}",
