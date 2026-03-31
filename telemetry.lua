@@ -606,17 +606,54 @@ render_calibration = function()
     local status = ""
     if not cal_channel then
         status = "Press 1-6 to select a channel"
-    elseif cal_mode == "draw" then
-        status = cal_channel:upper() .. ": Draw a rectangle. [c]=color [m]=center [s]=save [Esc]=exit"
     elseif cal_mode == "pick-color" then
         status = cal_channel:upper() .. ": Click on the active/filled color"
     elseif cal_mode == "pick-center" then
         status = cal_channel:upper() .. ": Click the center/zero point"
     end
-    ass:new_event(); ass:pos(btn_x + math.floor(16*fs), toolbar_h/2)
-    ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs%d}%s", ass_color(180,180,180), fs_sm, status))
+    if status ~= "" then
+        ass:new_event(); ass:pos(btn_x + math.floor(16*fs), toolbar_h/2)
+        ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs%d}%s", ass_color(180,180,180), fs_sm, status))
+    end
 
-    -- Config name
+    -- Hotkey panel (bottom-right)
+    if cal_channel and cal_mode == "draw" then
+        local cfg = config[cal_channel] or {}
+        local keys = {
+            {"click", "draw rectangle"},
+            {"c", "pick color"},
+            {"m", "set center"},
+            {"i", "invert" .. (cfg.invert and " ✓" or "")},
+            {"s", "save config"},
+            {"Esc", "exit"},
+        }
+        local kw = math.floor(180 * fs)
+        local kh = math.floor(24 * fs)
+        local kpad = math.floor(8 * fs)
+        local panel_h = #keys * kh + kpad * 2
+        local panel_w = kw + kpad * 2
+        local px = osd_w - panel_w - math.floor(16 * fs)
+        local py = osd_h - panel_h - math.floor(16 * fs)
+
+        -- Panel background
+        filled_rect(px, py, px + panel_w, py + panel_h, 20, 20, 20, 0.85)
+
+        for idx, kv in ipairs(keys) do
+            local ky = py + kpad + (idx - 1) * kh
+            -- Key badge
+            local badge_w = math.floor(42 * fs)
+            local badge_h = math.floor(18 * fs)
+            local badge_y = ky + (kh - badge_h) / 2
+            filled_rect(px + kpad, badge_y, px + kpad + badge_w, badge_y + badge_h, 60, 60, 60, 1)
+            ass:new_event(); ass:pos(px + kpad + badge_w / 2, ky + kh / 2)
+            ass:append(string.format("{\\an5\\bord0\\shad0%s\\fs%d\\fnmonospace}%s",
+                ass_color(220, 220, 220), math.floor(fs_sm * 0.85), kv[1]))
+            -- Label
+            ass:new_event(); ass:pos(px + kpad + badge_w + math.floor(8 * fs), ky + kh / 2)
+            ass:append(string.format("{\\an4\\bord0\\shad0%s\\fs%d}%s",
+                ass_color(170, 170, 170), math.floor(fs_sm * 0.9), kv[2]))
+        end
+    end
 
 
     -- Draw existing regions (video coords → OSD coords via video_to_osd)
