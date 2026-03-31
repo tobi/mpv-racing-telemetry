@@ -742,7 +742,7 @@ enter_calibration = function()
     cal_mode = "draw"
     mp.set_property_bool("pause", true)
     mp.command("script-message osc-visibility never no_osd")
-    pcall(function() mp.set_property_native("user-data/osc/visibility", "never") end)
+    mp.command("script-message osc-enable no")
 
     -- Take a frame for live preview
     pcall(process_frame)
@@ -898,7 +898,7 @@ exit_calibration = function()
 
     mp.set_property_bool("pause", false)
     mp.command("script-message osc-visibility auto no_osd")
-    pcall(function() mp.set_property_native("user-data/osc/visibility", "auto") end)
+    mp.command("script-message osc-enable yes")
     mp.osd_message("Calibration off")
     render_overlay()
 end
