@@ -76,7 +76,9 @@ function M.sample_center_offset(data, stride, cfg)
     end
     if wtot == 0 then return 0 end
     local cx = cfg.center_x or (cfg.x + cfg.w / 2)
-    return math.max(-1, math.min(1, (wsum / wtot - cx) / (cfg.w / 2)))
+    local val = math.max(-1, math.min(1, (wsum / wtot - cx) / (cfg.w / 2)))
+    if cfg.invert then val = -val end
+    return val
 end
 
 -- ── Digit OCR ──

@@ -857,6 +857,14 @@ enter_calibration = function()
             render_calibration()
         end)
 
+        mp.add_forced_key_binding("i", "cal-invert", function()
+            if not cal_active or not cal_channel then return end
+            local cfg = config[cal_channel] or {}
+            cfg.invert = not cfg.invert
+            config[cal_channel] = cfg
+            mp.osd_message("Invert: " .. (cfg.invert and "ON" or "OFF"))
+        end)
+
         -- Save
         mp.add_forced_key_binding("s", "cal-save", function()
             if not cal_active then return end
@@ -890,6 +898,7 @@ exit_calibration = function()
         mp.remove_key_binding("cal-click")
         mp.remove_key_binding("cal-pick-color")
         mp.remove_key_binding("cal-pick-center")
+        mp.remove_key_binding("cal-invert")
         mp.remove_key_binding("cal-save")
         mp.remove_key_binding("cal-exit")
         mp.remove_key_binding("cal-exit2")
