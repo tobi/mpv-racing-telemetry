@@ -51,12 +51,18 @@ end
 
 function M.sample_center_offset(data, stride, cfg)
     if not cfg.x then return 0 end
+    local ar = cfg.active_r or 255
+    local ag = cfg.active_g or 255
+    local ab = cfg.active_b or 255
+    local max_dist = cfg.color_dist or 60
     local hits = {}
     for i = 0, cfg.w - 1 do hits[i] = 0 end
     for col = 0, cfg.w - 1 do
         for row = 0, cfg.h - 1 do
             local r, g, b = M.get_pixel(data, stride, cfg.x + col, cfg.y + row)
-            if (r + g + b) / 3 > 150 then hits[col] = hits[col] + 1 end
+            local dr, dg, db = r - ar, g - ag, b - ab
+            local dist = math.sqrt(dr*dr + dg*dg + db*db)
+            if dist < max_dist then hits[col] = hits[col] + 1 end
         end
     end
     local max_h = 0
