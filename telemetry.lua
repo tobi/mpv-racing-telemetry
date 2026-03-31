@@ -283,6 +283,7 @@ local function process_frame()
                 -- Try ONNX first, fall back to pattern matching
                 if digit_ocr then
                     local d, c = digit_ocr.classify(data, stride, cfg.x, cfg.y, cfg.w, cfg.h)
+                    -- msg.info("gear OCR: d=" .. tostring(d) .. " c=" .. string.format("%.2f", c or 0))
                     if d then raw_vals[ch] = tonumber(d) or 0
                     else raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg) end
                 else
