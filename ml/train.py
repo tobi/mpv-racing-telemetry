@@ -6,6 +6,7 @@
 #     "datasets>=3.0",
 #     "pillow>=10,<12",
 #     "trackio>=0.20",
+#     "onnx>=1.14",
 #     "onnxscript>=0.1",
 # ]
 # ///
@@ -221,12 +222,21 @@ def train():
     # Export to ONNX
     model.eval().cpu()
     dummy = torch.randn(1, 1, INPUT_SIZE, INPUT_SIZE)
+    onnx_path = "digit_model_v4.onnx"
     torch.onnx.export(
-        model, dummy, "digit_model_v4.onnx",
+        model, dummy, onnx_path,
         input_names=["image"],
         output_names=["logits"],
         dynamic_axes={"image": {0: "batch"}, "logits": {0: "batch"}},
     )
+    # Ensure all weights are inlined (no external .data file)
+    import onnx
+    onnx_model = onnx.load(onnx_path)
+    onnx.save(onnx_model, onnx_path, save_as_external_data=False)
+    # Clean up any stale external data file
+    data_path = onnx_path + ".data"
+    if os.path.exists(data_path):
+        os.remove(data_path)
     onnx_size = os.path.getsize("digit_model_v4.onnx")
     print(f"Exported: digit_model_v4.onnx ({onnx_size / 1024:.0f} KB)")
     print(f"Model params: {param_count:,}")
