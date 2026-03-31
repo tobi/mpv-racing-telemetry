@@ -49,11 +49,11 @@ INPUT_SIZE = 32
 NUM_CLASSES = 10  # digits 0-9
 
 
-def precompute_tensors(hf_split, source_filter=None):
+def precompute_tensors(hf_split, exclude_source=None):
     to_tensor = transforms.ToTensor()
     xs, ys = [], []
     for ex in hf_split:
-        if source_filter and ex.get('source') != source_filter:
+        if exclude_source and ex.get('source') == exclude_source:
             continue
         img = ex['image'].convert('L').resize((INPUT_SIZE, INPUT_SIZE))
         x = to_tensor(img) * 2 - 1
@@ -66,28 +66,25 @@ class DigitCNN(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            # Depthwise separable convolutions for smaller model
-            nn.Conv2d(1, 12, 3, padding=1),
-            nn.BatchNorm2d(12),
+            nn.Conv2d(1, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(12, 12, 3, padding=1, groups=12),  # depthwise
-            nn.Conv2d(12, 24, 1),  # pointwise
-            nn.BatchNorm2d(24),
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(24, 24, 3, padding=1, groups=24),  # depthwise
-            nn.Conv2d(24, 24, 1),  # pointwise
-            nn.BatchNorm2d(24),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(4),
         )
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(24 * 4 * 4, 32),
+            nn.Linear(64 * 4 * 4, 128),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(32, NUM_CLASSES),
+            nn.Dropout(0.4),
+            nn.Linear(128, NUM_CLASSES),
         )
 
     def forward(self, x):
@@ -146,7 +143,7 @@ def train():
     t0 = time.time()
     # Train on all data, validate only on racing images
     train_x, train_y = precompute_tensors(ds['train'])
-    val_x, val_y = precompute_tensors(ds['validation'], source_filter='racing')
+    val_x, val_y = precompute_tensors(ds['validation'], exclude_source='mnist')
     print(f"Precomputed in {time.time()-t0:.1f}s. Train: {len(train_y)}, Val (racing): {len(val_y)}")
 
     train_transform = transforms.Compose([
@@ -162,7 +159,7 @@ def train():
     print(f"Model params: {param_count:,}")
 
     batch_size = 64
-    num_epochs = 200
+    num_epochs = 300
     steps_per_epoch = (len(train_y) + batch_size - 1) // batch_size
     optimizer = optim.AdamW(model.parameters(), lr=3e-3, weight_decay=1e-2)
     scheduler = optim.lr_scheduler.OneCycleLR(
