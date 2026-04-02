@@ -34,7 +34,8 @@ local digit_ocr = nil  -- loaded lazily
 -- CONFIG PERSISTENCE
 -- ══════════════════════════════════════════════════════════════
 
-local CONFIG_DIR = (os.getenv("HOME") or "/tmp") .. "/.config/mpv/telemetry-configs"
+-- Use mpv's own config directory so it works on any OS / custom MPV_HOME
+local CONFIG_DIR = (mp.find_config_file(".") or ((os.getenv("HOME") or "/tmp") .. "/.config/mpv")) .. "/telemetry-configs"
 local CHANNELS = {"throttle", "brake", "gear", "steering", "speed", "fuel"}
 
 local CHANNEL_DEFAULTS = {

@@ -1,14 +1,54 @@
-# Racing Telemetry — mpv Lua Script
+# Racing Telemetry for mpv
 
-Reads baked-in telemetry overlays from onboard racing camera videos by sampling raw pixel data in memory and re-renders them as a clean ASS overlay with scrolling traces, gear indicator, steering wheel, and pedal bars.
+Reads baked-in telemetry overlays from onboard racing videos and re-renders them as a clean real-time overlay with scrolling traces, gear indicator, steering wheel, and pedal bars.
 
-## How it works
+![screenshot placeholder]
 
-1. **Calibrate** (Ctrl+C) — Pause the video, draw rectangles over each telemetry element (throttle bar, brake bar, gear digit, steering indicator, speed, fuel). The script auto-detects colors and measurement types.
+## Install
 
-2. **Display** — During playback, the script samples pixels from the calibrated regions via `screenshot-raw` and renders a smooth ASS overlay synced to the video position.
+### 1. Install mpv
 
-## Keyboard shortcuts
+**macOS (Homebrew):**
+```bash
+brew install mpv
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S mpv
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install mpv
+```
+
+### 2. Install the plugin
+
+```bash
+git clone https://github.com/tobi/racing-telemetry-mpv.git
+cd racing-telemetry-mpv && ./install.sh
+```
+
+That's it. The installer symlinks this repo into mpv's script directory — mpv picks it up automatically on next launch.
+
+### Optional: digit recognition (OCR)
+
+The gear/speed OCR uses ONNX Runtime. Install it if you want digit recognition:
+
+**macOS:** `brew install onnxruntime`
+**Arch:** `yay -S onnxruntime` (or `sudo pacman -S onnxruntime`)
+**Ubuntu:** See [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases)
+
+Without it, everything works — gear is read via color matching instead of OCR.
+
+## Usage
+
+Open any racing onboard video in mpv:
+
+```bash
+mpv your-video.mp4
+```
 
 | Key | Action |
 |-----|--------|
@@ -18,29 +58,25 @@ Reads baked-in telemetry overlays from onboard racing camera videos by sampling 
 | `Ctrl+= / -` | Resize overlay |
 | `Ctrl+N` | Cycle through saved calibrations |
 
-### Calibration mode
+### Calibration
 
-| Key | Action |
-|-----|--------|
-| `1-6` | Select channel (1=throttle 2=brake 3=gear 4=steering 5=speed 6=fuel) |
-| Click+drag | Draw rectangle for selected channel |
-| `C` | Pick color (click on active/filled color) |
-| `M` | Set center point (for steering) |
-| `S` | Save calibration (prompts for name) |
-| `Escape` / `Space` | Exit calibration |
+1. Pause the video, press `Ctrl+C`
+2. Press `1`–`6` to select a channel (throttle, brake, gear, steering, speed, fuel)
+3. Click+drag a rectangle over each telemetry element
+4. Press `C` then click to pick the active color
+5. Press `S` to save — calibrations persist across sessions
 
-## Installation
+Comes with a built-in default for TDS Racing IMSA 1280×720 videos.
 
-Copy or symlink `telemetry.lua` into your mpv scripts directory:
+## Uninstall
 
 ```bash
-ln -s "$(pwd)/telemetry.lua" ~/.config/mpv/scripts/telemetry.lua
+rm ~/.config/mpv/scripts/racing-telemetry
 ```
 
-## Configuration
+## Development
 
-Calibrations are saved to `~/.config/mpv/telemetry-configs/`. Includes a built-in default for TDS Racing IMSA videos (1280×720).
-
-## Requirements
-
-- mpv
+```bash
+just check    # run tests
+just build    # build optional ONNX C bridge (not needed — pure FFI is default)
+```

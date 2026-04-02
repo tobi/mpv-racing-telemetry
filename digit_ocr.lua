@@ -80,10 +80,11 @@ function M.init(model_path)
 
     -- Load onnxruntime
     local paths = {
-        "/opt/homebrew/lib/libonnxruntime.1.24.4.dylib",
-        "/opt/homebrew/lib/libonnxruntime.dylib",
-        "/usr/local/lib/libonnxruntime.dylib",
-        "libonnxruntime",
+        "libonnxruntime",                              -- system LD path (works everywhere if installed)
+        "/opt/homebrew/lib/libonnxruntime.dylib",       -- macOS ARM (Homebrew)
+        "/usr/local/lib/libonnxruntime.dylib",          -- macOS Intel (Homebrew)
+        "/usr/lib/libonnxruntime.so",                   -- Linux system
+        "/usr/local/lib/libonnxruntime.so",             -- Linux /usr/local
     }
     for _, p in ipairs(paths) do
         local ok, lib = pcall(ffi.load, p)

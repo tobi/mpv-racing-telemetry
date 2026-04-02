@@ -17,12 +17,7 @@ build:
 
 # Install mpv scripts globally
 install:
-    mkdir -p ~/.config/mpv/scripts
-    ln -sf {{justfile_directory()}}/telemetry.lua ~/.config/mpv/scripts/telemetry.lua
-    ln -sf {{justfile_directory()}}/telemetry_core.lua ~/.config/mpv/scripts/telemetry_core.lua
-    ln -sf {{justfile_directory()}}/digit_ocr.lua ~/.config/mpv/scripts/digit_ocr.lua
-    ln -sf {{justfile_directory()}}/digit_ocr_bridge.dylib ~/.config/mpv/scripts/digit_ocr_bridge.dylib
-    ln -sf {{justfile_directory()}}/ml/digit_model_v3.onnx ~/.config/mpv/scripts/digit_model_v3.onnx
+    ./install.sh
 
 # ML: generate training data
 ml-data:
