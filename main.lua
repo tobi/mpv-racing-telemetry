@@ -29,17 +29,20 @@ local utils = require("mp.utils")
 -- to let the OSC initialize first, then update script-opts which
 -- triggers the OSC's change callback and re-init.
 -- Register telemetry toggle button with mpv's built-in OSC.
--- We use a short timer so the OSC has finished its initial read_options,
--- then our change-list triggers its change callback and re-init.
+-- We update script-opts after a short delay so the OSC has initialized,
+-- then our property change triggers its observe_property callback.
 mp.add_timeout(0.1, function()
-    local opts = {
-        {"osc-custom_button_1_content", "\xe2\x8f\xb1"},  -- ⏱
-        {"osc-custom_button_1_mbtn_left_command", "script-binding toggle-telemetry"},
-        {"osc-custom_button_1_mbtn_right_command", "script-binding toggle-calibration"},
+    local new_opts = {
+        ["osc-custom_button_1_content"] = "TEL",
+        ["osc-custom_button_1_mbtn_left_command"] = "script-binding toggle-telemetry",
+        ["osc-custom_button_1_mbtn_right_command"] = "script-binding toggle-calibration",
     }
-    for _, kv in ipairs(opts) do
-        mp.commandv("change-list", "script-opts", "append", kv[1] .. "=" .. kv[2])
+    -- Read current script-opts table and merge our keys in
+    local current = mp.get_property_native("options/script-opts", {})
+    for k, v in pairs(new_opts) do
+        current[k] = v
     end
+    mp.set_property_native("options/script-opts", current)
     msg.verbose("Registered OSC telemetry button")
 end)
 
