@@ -24,6 +24,25 @@ local msg = require("mp.msg")
 local assdraw = require("mp.assdraw")
 local utils = require("mp.utils")
 
+-- Register telemetry toggle button with mpv's built-in OSC.
+-- Built-in scripts load before user scripts, so we delay slightly
+-- to let the OSC initialize first, then update script-opts which
+-- triggers the OSC's change callback and re-init.
+-- Register telemetry toggle button with mpv's built-in OSC.
+-- We use a short timer so the OSC has finished its initial read_options,
+-- then our change-list triggers its change callback and re-init.
+mp.add_timeout(0.1, function()
+    local opts = {
+        {"osc-custom_button_1_content", "\xe2\x8f\xb1"},  -- ⏱
+        {"osc-custom_button_1_mbtn_left_command", "script-binding toggle-telemetry"},
+        {"osc-custom_button_1_mbtn_right_command", "script-binding toggle-calibration"},
+    }
+    for _, kv in ipairs(opts) do
+        mp.commandv("change-list", "script-opts", "append", kv[1] .. "=" .. kv[2])
+    end
+    msg.verbose("Registered OSC telemetry button")
+end)
+
 -- Add script directory to Lua path so we can require telemetry_core
 local script_dir = debug.getinfo(1, "S").source:match("@?(.*/)") or "./"
 package.path = script_dir .. "?.lua;" .. package.path

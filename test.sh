@@ -4,8 +4,7 @@ sleep 0.3
 cd "$(dirname "$0")"
 exec mpv --vo=gpu \
   --no-config \
-  --osc=yes \
-  --script-opts="osc-custom_button_1_content=⏱,osc-custom_button_1_mbtn_left_command=script-binding toggle-telemetry,osc-custom_button_1_mbtn_right_command=script-binding toggle-calibration" \
+  --volume=10 \
   --script=main.lua \
   --start=300 \
   "${1:-/Users/tobi/src/tries/2026-02-20-motec-parser/sessions/sebring-2026/CT2/26IMSAT02_SEB_CT2_Run03_DHH.MOV}"
