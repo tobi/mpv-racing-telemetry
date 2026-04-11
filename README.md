@@ -26,7 +26,7 @@ sudo apt install mpv
 ### 2. Install the plugin
 
 ```bash
-git clone https://github.com/tobi/racing-telemetry-mpv.git ~/.config/mpv/scripts/racing-telemetry
+git clone https://github.com/tobi/mpv-racing-telemetry.git ~/.config/mpv/scripts/racing-telemetry
 ```
 
 That's it — mpv auto-loads any `main.lua` it finds in `~/.config/mpv/scripts/*/`.
