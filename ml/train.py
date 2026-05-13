@@ -23,6 +23,7 @@ Usage:
 import time
 import ctypes
 import os
+from pathlib import Path
 
 # Preload CUDA driver if available (needed in some Nix environments)
 for _cuda_path in ['/usr/lib/libcuda.so.1', '/usr/lib/x86_64-linux-gnu/libcuda.so.1']:
@@ -38,6 +39,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms
 from datasets import load_dataset
+from PIL import Image
 
 try:
     import trackio
@@ -47,18 +49,50 @@ except Exception:
 
 INPUT_SIZE = 32
 NUM_CLASSES = 10  # digits 0-9
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+LOCAL_DATA_DIR = SCRIPT_DIR / "local_data"
+LOCAL_REPEAT = 20  # upweight fresh hard examples without changing HF dataset
+
+
+def image_to_tensor(img):
+    to_tensor = transforms.ToTensor()
+    img = img.convert('L').resize((INPUT_SIZE, INPUT_SIZE))
+    return to_tensor(img) * 2 - 1
 
 
 def precompute_tensors(hf_split, exclude_source=None):
-    to_tensor = transforms.ToTensor()
     xs, ys = [], []
     for ex in hf_split:
         if exclude_source and ex.get('source') == exclude_source:
             continue
-        img = ex['image'].convert('L').resize((INPUT_SIZE, INPUT_SIZE))
-        x = to_tensor(img) * 2 - 1
-        xs.append(x)
+        xs.append(image_to_tensor(ex['image']))
         ys.append(ex['label'])
+    return torch.stack(xs), torch.tensor(ys, dtype=torch.long)
+
+
+def precompute_local_tensors(root=LOCAL_DATA_DIR, repeat=LOCAL_REPEAT):
+    xs, ys = [], []
+    if not root.exists():
+        return None, None
+
+    for label_dir in sorted(root.iterdir()):
+        if not label_dir.is_dir() or not label_dir.name.isdigit():
+            continue
+        label = int(label_dir.name)
+        if not 0 <= label < NUM_CLASSES:
+            continue
+        for path in sorted(label_dir.iterdir()):
+            if path.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
+                continue
+            with Image.open(path) as img:
+                x = image_to_tensor(img)
+            for _ in range(repeat):
+                xs.append(x.clone())
+                ys.append(label)
+
+    if not xs:
+        return None, None
     return torch.stack(xs), torch.tensor(ys, dtype=torch.long)
 
 
@@ -143,6 +177,12 @@ def train():
     t0 = time.time()
     # Train on all data, validate only on racing images
     train_x, train_y = precompute_tensors(ds['train'])
+    local_x, local_y = precompute_local_tensors()
+    if local_x is not None:
+        train_x = torch.cat([train_x, local_x], dim=0)
+        train_y = torch.cat([train_y, local_y], dim=0)
+        counts = torch.bincount(local_y, minlength=NUM_CLASSES).tolist()
+        print(f"Added local hard examples: {len(local_y)} augmented samples; labels={counts}")
     val_x, val_y = precompute_tensors(ds['validation'], exclude_source='mnist')
     print(f"Precomputed in {time.time()-t0:.1f}s. Train: {len(train_y)}, Val (racing): {len(val_y)}")
 
@@ -198,10 +238,10 @@ def train():
         if is_best:
             best_val_f1 = val_f1
             best_val_acc = val_acc
-            torch.save(model.state_dict(), "digit_model_best.pth")
+            torch.save(model.state_dict(), REPO_ROOT / "digit_model_best.pth")
 
     # Print per-class errors
-    model.load_state_dict(torch.load("digit_model_best.pth", weights_only=True))
+    model.load_state_dict(torch.load(REPO_ROOT / "digit_model_best.pth", weights_only=True))
     model.eval()
     with torch.no_grad():
         preds = model(val_x.to(device)).argmax(1).cpu()
@@ -219,7 +259,7 @@ def train():
     # Export to ONNX
     model.eval().cpu()
     dummy = torch.randn(1, 1, INPUT_SIZE, INPUT_SIZE)
-    onnx_path = "digit_model_v4.onnx"
+    onnx_path = REPO_ROOT / "digit_model_v4.onnx"
     torch.onnx.export(
         model, dummy, onnx_path,
         input_names=["image"],
@@ -231,11 +271,15 @@ def train():
     onnx_model = onnx.load(onnx_path)
     onnx.save(onnx_model, onnx_path, save_as_external_data=False)
     # Clean up any stale external data file
-    data_path = onnx_path + ".data"
+    data_path = str(onnx_path) + ".data"
     if os.path.exists(data_path):
         os.remove(data_path)
-    onnx_size = os.path.getsize("digit_model_v4.onnx")
-    print(f"Exported: digit_model_v4.onnx ({onnx_size / 1024:.0f} KB)")
+    loaded_model_path = SCRIPT_DIR / "digit_model_v4.onnx"
+    if loaded_model_path != onnx_path:
+        loaded_model_path.write_bytes(onnx_path.read_bytes())
+    onnx_size = onnx_path.stat().st_size
+    print(f"Exported: {onnx_path} ({onnx_size / 1024:.0f} KB)")
+    print(f"Copied loaded model: {loaded_model_path}")
     print(f"Model params: {param_count:,}")
     if HAS_TRACKIO:
         trackio.log({"best_val_acc": best_val_acc, "best_val_f1": best_val_f1})

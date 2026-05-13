@@ -4,7 +4,7 @@
 -- raw pixel data in memory (screenshot-raw). Renders via ASS overlay.
 --
 -- Keys:
---   Ctrl+t       — toggle telemetry overlay
+--   T / Ctrl+t   — force/show/off telemetry overlay
 --   Ctrl+c       — enter/exit calibration mode
 --   Ctrl+g       — cycle overlay position
 --   Ctrl+= / -   — resize overlay
@@ -211,7 +211,13 @@ end
 -- STATE
 -- ══════════════════════════════════════════════════════════════
 
-local overlay_visible = true
+-- Sampling is enabled by default, but the widget starts hidden until the
+-- sampled values actually change. This keeps random/non-telemetry videos from
+-- showing an empty telemetry panel, while still allowing auto-detection in the
+-- background. Press the telemetry hotkey to force-show it.
+local telemetry_enabled = true
+local overlay_auto_visible = false
+local overlay_forced_visible = false
 local overlay = mp.create_osd_overlay("ass-events")
 local cal_overlay = mp.create_osd_overlay("ass-events") -- calibration overlay
 local timer = nil
@@ -256,7 +262,86 @@ local trace_idx = 0
 -- Current values
 local cur = { throttle = 0, brake = 0, gear = 0, steering = 0, speed = 0, fuel = 0 }
 local raw_vals = { throttle = 0, brake = 0, gear = 0, steering = 0, speed = 0, fuel = 0 }
+local raw_conf = { gear = 0, speed = 0 }
 local SMOOTH = 0.15
+
+-- Auto-show detection state. Gear changes are the strongest signal that the
+-- configured telemetry regions are real; analog channels need several changes
+-- before we unhide to avoid false positives on unrelated videos.
+local auto_samples = 0
+local auto_change_hits = 0
+local auto_gear_read_hits = 0
+local auto_last_vals = nil
+local AUTO_ANALOG_DELTA = 0.06
+local AUTO_STEERING_DELTA = 0.10
+local AUTO_SPEED_DELTA = 2
+local AUTO_GEAR_CONF = 0.60
+
+local function overlay_should_render()
+    return telemetry_enabled and (overlay_forced_visible or overlay_auto_visible)
+end
+
+local function reset_auto_detection()
+    overlay_auto_visible = false
+    auto_samples = 0
+    auto_change_hits = 0
+    auto_gear_read_hits = 0
+    auto_last_vals = nil
+    trace = {}
+    trace_idx = 0
+end
+
+local function mark_telemetry_detected(reason)
+    if not overlay_auto_visible then
+        overlay_auto_visible = true
+        msg.info("Telemetry data detected (" .. reason .. "); showing overlay")
+    end
+end
+
+local function update_auto_detection()
+    if overlay_auto_visible or overlay_forced_visible then return end
+
+    auto_samples = auto_samples + 1
+    local vals = {
+        throttle = raw_vals.throttle or 0,
+        brake = raw_vals.brake or 0,
+        steering = raw_vals.steering or 0,
+        speed = raw_vals.speed or 0,
+        gear = raw_vals.gear or 0,
+        fuel = raw_vals.fuel or 0,
+    }
+
+    if vals.gear > 0 and (raw_conf.gear or 0) >= AUTO_GEAR_CONF then
+        auto_gear_read_hits = auto_gear_read_hits + 1
+        if auto_gear_read_hits >= 2 then
+            mark_telemetry_detected("gear read " .. tostring(vals.gear))
+        end
+    else
+        auto_gear_read_hits = 0
+    end
+
+    if auto_last_vals then
+        if vals.gear > 0 and vals.gear ~= auto_last_vals.gear then
+            mark_telemetry_detected("gear " .. tostring(auto_last_vals.gear) .. "→" .. tostring(vals.gear))
+        end
+
+        local changed = false
+        if math.abs(vals.throttle - auto_last_vals.throttle) >= AUTO_ANALOG_DELTA then changed = true end
+        if math.abs(vals.brake - auto_last_vals.brake) >= AUTO_ANALOG_DELTA then changed = true end
+        if math.abs(vals.fuel - auto_last_vals.fuel) >= AUTO_ANALOG_DELTA then changed = true end
+        if math.abs(vals.steering - auto_last_vals.steering) >= AUTO_STEERING_DELTA then changed = true end
+        if math.abs(vals.speed - auto_last_vals.speed) >= AUTO_SPEED_DELTA then changed = true end
+
+        if changed then
+            auto_change_hits = auto_change_hits + 1
+            if auto_change_hits >= 3 then
+                mark_telemetry_detected("changing telemetry values")
+            end
+        end
+    end
+
+    auto_last_vals = vals
+end
 
 -- Forward declarations
 local enter_calibration, exit_calibration, render_calibration, render_overlay
@@ -304,11 +389,16 @@ local function process_frame()
                 raw_vals[ch] = sample_center_offset(data, stride, cfg)
             elseif cfg.type == "digit" then
                 -- Try ONNX first, fall back to pattern matching
+                raw_conf[ch] = 0
                 if digit_ocr then
                     local d, c = digit_ocr.classify(data, stride, cfg.x, cfg.y, cfg.w, cfg.h)
                     -- msg.info("gear OCR: d=" .. tostring(d) .. " c=" .. string.format("%.2f", c or 0))
-                    if d then raw_vals[ch] = tonumber(d) or 0
-                    else raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg) end
+                    if d then
+                        raw_vals[ch] = tonumber(d) or 0
+                        raw_conf[ch] = c or 0
+                    else
+                        raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
+                    end
                 else
                     raw_vals[ch] = sample_digit(data, stride, cfg.x, cfg.y, cfg.w, cfg.h, cfg)
                 end
@@ -317,6 +407,8 @@ local function process_frame()
             end
         end
     end
+
+    update_auto_detection()
 
     -- Smooth analog, snap digital
     for _, ch in ipairs({"throttle", "brake", "steering", "fuel"}) do
@@ -355,7 +447,7 @@ local ass_alpha = core.ass_alpha
 -- ══════════════════════════════════════════════════════════════
 
 render_overlay = function()
-    if not overlay_visible or cal_active then
+    if not overlay_should_render() or cal_active then
         overlay.data = ""; overlay:update(); return
     end
     if not next(config) then return end -- no config loaded
@@ -989,7 +1081,7 @@ local function on_tick()
     end
 
     local paused = mp.get_property_bool("pause", false)
-    if not dragging and not cal_active and not paused then
+    if telemetry_enabled and not dragging and not cal_active and not paused then
         local ok, err = pcall(process_frame)
         if not ok then
             frame_failures = frame_failures + 1
@@ -1026,11 +1118,27 @@ end
 -- KEY BINDINGS
 -- ══════════════════════════════════════════════════════════════
 
-mp.add_key_binding("t", "toggle-telemetry", function()
-    overlay_visible = not overlay_visible
-    if overlay_visible then start_sampling(); mp.osd_message("Telemetry ON")
-    else stop_sampling(); mp.osd_message("Telemetry OFF") end
-end)
+local function toggle_telemetry()
+    if not telemetry_enabled then
+        telemetry_enabled = true
+        overlay_forced_visible = true
+        start_sampling()
+        mp.osd_message("Telemetry ON (forced)")
+    elseif overlay_should_render() then
+        telemetry_enabled = false
+        overlay_forced_visible = false
+        stop_sampling()
+        mp.osd_message("Telemetry OFF")
+    else
+        overlay_forced_visible = true
+        start_sampling()
+        render_overlay()
+        mp.osd_message("Telemetry ON (forced)")
+    end
+end
+
+mp.add_key_binding("t", "toggle-telemetry", toggle_telemetry)
+mp.add_key_binding("ctrl+t", "toggle-telemetry-ctrl", toggle_telemetry)
 
 mp.add_key_binding("ctrl+c", "toggle-calibration", function()
     if cal_active then exit_calibration() else enter_calibration() end
@@ -1097,6 +1205,7 @@ end)
 
 mp.register_event("file-loaded", function()
     msg.info("File loaded")
+    reset_auto_detection()
 
     -- Initialize ONNX digit recognition (lazy, once)
     if not digit_ocr then
@@ -1107,19 +1216,19 @@ mp.register_event("file-loaded", function()
                 digit_ocr = mod
             end
         else
-            msg.verbose("ONNX digit OCR not available: " .. tostring(mod))
+            msg.warn("ONNX digit OCR not available: " .. tostring(mod))
         end
     end
     if not load_most_recent() then
         msg.info("No calibration found — Ctrl+C to calibrate")
     end
-    if overlay_visible then start_sampling() end
+    if telemetry_enabled then start_sampling() end
 end)
 
 mp.register_event("end-file", stop_sampling)
 
 mp.observe_property("vo-configured", "bool", function(_, configured)
-    if configured and overlay_visible then
+    if configured and telemetry_enabled then
         -- Remove old overlays before creating new ones to avoid duplicates
         overlay:remove()
         cal_overlay:remove()
@@ -1129,10 +1238,10 @@ mp.observe_property("vo-configured", "bool", function(_, configured)
 end)
 
 mp.observe_property("fullscreen", "bool", function()
-    if overlay_visible then mp.add_timeout(0.2, render_overlay) end
+    if telemetry_enabled then mp.add_timeout(0.2, render_overlay) end
 end)
 
 -- Load on startup
 load_most_recent()
 load_widget_pos()
-msg.info("Racing Telemetry loaded. Ctrl+T=toggle Ctrl+C=calibrate Ctrl+N=cycle configs Ctrl+G=position Ctrl+±=size")
+msg.info("Racing Telemetry loaded. Hidden until data changes; T/Ctrl+T=force/show/off Ctrl+C=calibrate Ctrl+N=cycle configs Ctrl+G=position Ctrl+±=size")
