@@ -1,0 +1,104 @@
+name: Release zip
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-zip:
+    name: Build and publish latest zip
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build runtime zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha="${GITHUB_SHA::7}"
+          package_dir="build/racing-telemetry"
+          zip_file="dist/racing-telemetry.zip"
+
+          rm -rf build dist
+          mkdir -p "$package_dir" dist
+
+          cp -a \
+            README.md \
+            install.sh \
+            main.lua \
+            telemetry_core.lua \
+            digit_ocr.lua \
+            "$package_dir/"
+
+          mkdir -p "$package_dir/ml"
+          cp -a ml/digit_model_v4.onnx "$package_dir/ml/"
+
+          mkdir -p "$package_dir/assets"
+          cp -a assets/screeenshot.png "$package_dir/assets/"
+
+          mkdir -p "$package_dir/third_party/onnxruntime"
+          cp -a third_party/onnxruntime/win-x64 "$package_dir/third_party/onnxruntime/"
+
+          cat > "$package_dir/VERSION.txt" <<EOF
+          racing-telemetry
+          commit: ${GITHUB_SHA}
+          built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+          (cd build && zip -r "../$zip_file" racing-telemetry)
+          cp "$zip_file" "dist/racing-telemetry-${short_sha}.zip"
+          sha256sum "$zip_file" > dist/racing-telemetry.zip.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: racing-telemetry
+          path: |
+            dist/racing-telemetry.zip
+            dist/racing-telemetry.zip.sha256
+
+      - name: Move latest tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "$GITHUB_SHA"
+          git push origin latest --force
+
+      - name: Create or update latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          notes="Automated build from ${GITHUB_SHA}.
+
+Download and extract \`racing-telemetry.zip\` into your mpv scripts directory. The zip includes the Windows x64 CPU ONNX Runtime DLLs."
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest \
+              --title "Latest racing-telemetry build" \
+              --notes "$notes" \
+              --latest
+            gh release upload latest \
+              dist/racing-telemetry.zip \
+              dist/racing-telemetry.zip.sha256 \
+              --clobber
+          else
+            gh release create latest \
+              dist/racing-telemetry.zip \
+              dist/racing-telemetry.zip.sha256 \
+              --title "Latest racing-telemetry build" \
+              --notes "$notes" \
+              --latest
+          fi

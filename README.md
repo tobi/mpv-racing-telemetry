@@ -28,17 +28,19 @@ Windows builds generally work.
 
 ### 2. Install the plugin
 
-**macOS/Linux:**
+Download the latest ready-to-install zip from [GitHub Releases](https://github.com/tobi/mpv-racing-telemetry/releases/latest), then extract the `racing-telemetry` folder into your mpv scripts directory.
+
+**macOS/Linux git install:**
 ```bash
-git clone https://github.com/tobi/racing-telemetry-mpv.git ~/.config/mpv/scripts/racing-telemetry
+git clone https://github.com/tobi/mpv-racing-telemetry.git ~/.config/mpv/scripts/racing-telemetry
 ```
 
-**Windows installed mpv:**
+**Windows installed mpv git install:**
 ```powershell
-git clone https://github.com/tobi/racing-telemetry-mpv.git "$env:APPDATA\mpv\scripts\racing-telemetry"
+git clone https://github.com/tobi/mpv-racing-telemetry.git "$env:APPDATA\mpv\scripts\racing-telemetry"
 ```
 
-**Windows portable mpv:** clone this repo into:
+**Windows portable mpv:** extract the release zip, or clone this repo, into:
 ```text
 <mpv folder>\portable_config\scripts\racing-telemetry
 ```
