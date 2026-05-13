@@ -81,9 +81,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          notes="Automated build from ${GITHUB_SHA}.
-
-Download and extract \`racing-telemetry.zip\` into your mpv scripts directory. The zip includes the Windows x64 CPU ONNX Runtime DLLs."
+          notes=$'Automated build from '${GITHUB_SHA}$'.\n\nDownload and extract `racing-telemetry.zip` into your mpv scripts directory. The zip includes the Windows x64 CPU ONNX Runtime DLLs.'
 
           if gh release view latest >/dev/null 2>&1; then
             gh release edit latest \
