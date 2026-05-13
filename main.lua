@@ -46,9 +46,16 @@ mp.add_timeout(0.1, function()
     msg.verbose("Registered OSC telemetry button")
 end)
 
--- Add script directory to Lua path so we can require telemetry_core
-local script_dir = debug.getinfo(1, "S").source:match("@?(.*/)") or "./"
-package.path = script_dir .. "?.lua;" .. package.path
+-- Add script directory to Lua path so we can require telemetry_core.
+-- Accept both POSIX and Windows path separators.
+local script_dir = debug.getinfo(1, "S").source:match("@?(.+[\\/])") or "./"
+local path_sep = package.config:sub(1, 1)
+local function path_join(...)
+    local parts = {...}
+    local out = table.concat(parts, path_sep)
+    return out:gsub("[\\/]+", path_sep)
+end
+package.path = path_join(script_dir, "?.lua") .. ";" .. package.path
 local core = require("telemetry_core")
 local digit_ocr = nil  -- loaded lazily
 
@@ -1211,8 +1218,8 @@ mp.register_event("file-loaded", function()
     if not digit_ocr then
         local ok, mod = pcall(require, "digit_ocr")
         if ok then
-            local model = script_dir .. "ml/digit_model_v4.onnx"
-            if mod.init(model) then
+            local model = path_join(script_dir, "ml", "digit_model_v4.onnx")
+            if mod.init(model, script_dir) then
                 digit_ocr = mod
             end
         else

@@ -23,15 +23,29 @@ sudo pacman -S mpv
 sudo apt install mpv
 ```
 
+**Windows:** install a build of mpv that includes LuaJIT. The official/shinchiro
+Windows builds generally work.
+
 ### 2. Install the plugin
 
+**macOS/Linux:**
 ```bash
 git clone https://github.com/tobi/racing-telemetry-mpv.git ~/.config/mpv/scripts/racing-telemetry
 ```
 
-That's it — mpv auto-loads any `main.lua` it finds in `~/.config/mpv/scripts/*/`.
+**Windows installed mpv:**
+```powershell
+git clone https://github.com/tobi/racing-telemetry-mpv.git "$env:APPDATA\mpv\scripts\racing-telemetry"
+```
 
-Alternatively, if you want to clone it elsewhere and symlink:
+**Windows portable mpv:** clone this repo into:
+```text
+<mpv folder>\portable_config\scripts\racing-telemetry
+```
+
+That's it — mpv auto-loads any `main.lua` it finds in the script directory.
+
+Alternatively, on macOS/Linux, if you want to clone it elsewhere and symlink:
 
 ```bash
 git clone https://github.com/tobi/racing-telemetry-mpv.git
@@ -42,11 +56,13 @@ cd racing-telemetry-mpv && ./install.sh
 
 The gear/speed OCR uses ONNX Runtime. Install it if you want digit recognition:
 
+**Windows:** CPU ONNX Runtime DLLs are bundled in `third_party/onnxruntime/win-x64`, so no separate install is needed. You still need a LuaJIT-enabled mpv build.
+
 **macOS:** `brew install onnxruntime`
 **Arch:** `yay -S onnxruntime` (or `sudo pacman -S onnxruntime`)
 **Ubuntu:** See [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases)
 
-Without it, everything works — gear is read via color matching instead of OCR.
+Without ONNX Runtime or LuaJIT FFI, everything except neural OCR still works; the script falls back to the older pattern matcher.
 
 ## Usage
 

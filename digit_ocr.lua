@@ -59,6 +59,59 @@ local session = nil
 local mem_info = nil
 local initialized = false
 
+local IS_WINDOWS = ffi.os == "Windows"
+local PATH_SEP = IS_WINDOWS and "\\" or "/"
+
+local function path_join(...)
+    local parts = {...}
+    local out = table.concat(parts, PATH_SEP)
+    return out:gsub("[\\/]+", PATH_SEP)
+end
+
+local function file_exists(path)
+    local f = io.open(path, "rb")
+    if f then f:close(); return true end
+    return false
+end
+
+local function dirname(path)
+    return path:match("^(.+)[\\/][^\\/]+$") or "."
+end
+
+-- ONNX Runtime's C API uses wchar_t paths on Windows. LuaJIT strings are
+-- UTF-8, so build a UTF-16LE buffer for CreateSession.
+local function utf8_to_utf16le(str)
+    local codepoints = {}
+    local i, n = 1, #str
+    while i <= n do
+        local b1 = str:byte(i)
+        local cp
+        if b1 < 0x80 then
+            cp = b1; i = i + 1
+        elseif b1 < 0xE0 then
+            local b2 = str:byte(i + 1) or 0
+            cp = (b1 % 0x20) * 0x40 + (b2 % 0x40); i = i + 2
+        elseif b1 < 0xF0 then
+            local b2, b3 = str:byte(i + 1) or 0, str:byte(i + 2) or 0
+            cp = (b1 % 0x10) * 0x1000 + (b2 % 0x40) * 0x40 + (b3 % 0x40); i = i + 3
+        else
+            local b2, b3, b4 = str:byte(i + 1) or 0, str:byte(i + 2) or 0, str:byte(i + 3) or 0
+            cp = (b1 % 0x08) * 0x40000 + (b2 % 0x40) * 0x1000 + (b3 % 0x40) * 0x40 + (b4 % 0x40); i = i + 4
+        end
+        if cp <= 0xFFFF then
+            codepoints[#codepoints + 1] = cp
+        else
+            cp = cp - 0x10000
+            codepoints[#codepoints + 1] = 0xD800 + math.floor(cp / 0x400)
+            codepoints[#codepoints + 1] = 0xDC00 + (cp % 0x400)
+        end
+    end
+    local buf = ffi.new("uint16_t[?]", #codepoints + 1)
+    for j, cp in ipairs(codepoints) do buf[j - 1] = cp end
+    buf[#codepoints] = 0
+    return buf
+end
+
 -- Call an OrtApi function by index, casting to the given type
 local function api_fn(idx, ctype)
     local fp = ffi.cast("void**", api)
@@ -75,17 +128,34 @@ local function check_status(status)
     end
 end
 
-function M.init(model_path)
+function M.init(model_path, script_dir)
     if initialized then return true end
 
-    -- Load onnxruntime
-    local paths = {
-        "libonnxruntime",                              -- system LD path (works everywhere if installed)
-        "/opt/homebrew/lib/libonnxruntime.dylib",       -- macOS ARM (Homebrew)
-        "/usr/local/lib/libonnxruntime.dylib",          -- macOS Intel (Homebrew)
-        "/usr/lib/libonnxruntime.so",                   -- Linux system
-        "/usr/local/lib/libonnxruntime.so",             -- Linux /usr/local
-    }
+    script_dir = script_dir or dirname(model_path)
+    local bundled_win_dir = path_join(script_dir, "third_party", "onnxruntime", "win-x64")
+
+    -- Load onnxruntime. On Windows we bundle the CPU DLLs so users do not need
+    -- to install ONNX Runtime separately; elsewhere we prefer the system copy.
+    local paths
+    if IS_WINDOWS then
+        local bundled_providers = path_join(bundled_win_dir, "onnxruntime_providers_shared.dll")
+        if file_exists(bundled_providers) then pcall(ffi.load, bundled_providers) end
+        paths = {
+            path_join(bundled_win_dir, "onnxruntime.dll"),
+            path_join(script_dir, "onnxruntime.dll"),
+            path_join(script_dir, "bin", "onnxruntime.dll"),
+            "onnxruntime",
+            "onnxruntime.dll",
+        }
+    else
+        paths = {
+            "libonnxruntime",                              -- system LD path (works everywhere if installed)
+            "/opt/homebrew/lib/libonnxruntime.dylib",       -- macOS ARM (Homebrew)
+            "/usr/local/lib/libonnxruntime.dylib",          -- macOS Intel (Homebrew)
+            "/usr/lib/libonnxruntime.so",                   -- Linux system
+            "/usr/local/lib/libonnxruntime.so",             -- Linux /usr/local
+        }
+    end
     for _, p in ipairs(paths) do
         local ok, lib = pcall(ffi.load, p)
         if ok then ort_lib = lib; break end
@@ -131,11 +201,18 @@ function M.init(model_path)
             "OrtStatus*(*)(OrtSessionOptions*, int)")
         SetThreads(opts, 1)
 
-        -- CreateSession
-        local CreateSession = api_fn(IDX.CreateSession,
-            "OrtStatus*(*)(OrtEnv*, const char*, OrtSessionOptions*, OrtSession**)")
+        -- CreateSession. ORTCHAR_T is wchar_t on Windows and char elsewhere.
         local sess_p = ffi.new("OrtSession*[1]")
-        check_status(CreateSession(env, model_path, opts, sess_p))
+        if IS_WINDOWS then
+            local CreateSession = api_fn(IDX.CreateSession,
+                "OrtStatus*(*)(OrtEnv*, const wchar_t*, OrtSessionOptions*, OrtSession**)")
+            local wide_model_path = utf8_to_utf16le(model_path)
+            check_status(CreateSession(env, ffi.cast("const wchar_t*", wide_model_path), opts, sess_p))
+        else
+            local CreateSession = api_fn(IDX.CreateSession,
+                "OrtStatus*(*)(OrtEnv*, const char*, OrtSessionOptions*, OrtSession**)")
+            check_status(CreateSession(env, model_path, opts, sess_p))
+        end
         session = sess_p[0]
 
         -- ReleaseSessionOptions
