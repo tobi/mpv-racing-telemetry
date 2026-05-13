@@ -2,7 +2,7 @@
 
 Reads baked-in telemetry overlays from onboard racing videos and re-renders them as a clean real-time overlay with scrolling traces, gear indicator, steering wheel, and pedal bars.
 
-![screenshot placeholder]
+![Racing telemetry overlay screenshot](./assets/screeenshot.png)
 
 ## Install
 
